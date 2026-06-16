@@ -94,7 +94,7 @@ class URLAuth:
         verify = partial(self.verify, url, skew=skew)
         match self.backend:
             case HMACBackend():
-                return RuntimeError("Use sync backend for best performance with HMAC")
+                raise RuntimeError("Use sync backend for best performance with HMAC")
             case Ed25519Backend():
                 return await run_sync(verify)
             case _:

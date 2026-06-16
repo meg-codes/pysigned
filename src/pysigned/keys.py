@@ -1,6 +1,7 @@
 import hashlib
 from dataclasses import dataclass
 
+from cryptography.exceptions import InvalidSignature  # noqa: F401  (re-exported for backends)
 from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
 
 
@@ -34,9 +35,7 @@ class Key:
         # underneath the frozen instance.
         object.__setattr__(self, "key", bytes(self.key))
         if not self.id:
-            object.__setattr__(
-                self, "id", hashlib.sha256(self._id_bytes()).hexdigest()
-            )
+            object.__setattr__(self, "id", hashlib.sha512(self._id_bytes()).hexdigest())
 
     def _validate(self) -> None:
         raise NotImplementedError

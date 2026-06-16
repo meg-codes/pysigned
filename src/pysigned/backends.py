@@ -4,7 +4,6 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Generic, TypeVar
 
-from cryptography.exceptions import InvalidSignature
 
 from .keys import (
     DIGEST,
@@ -27,16 +26,13 @@ class Backend(ABC, Generic[K]):
     """
 
     @abstractmethod
-    def parse_key(self, value) -> K:
-        ...
+    def parse_key(self, value) -> K: ...
 
     @abstractmethod
-    def sign(self, key: K, message: bytes) -> str:
-        ...
+    def sign(self, key: K, message: bytes) -> str: ...
 
     @abstractmethod
-    def verify(self, key: K, message: bytes, signature: str) -> bool:
-        ...
+    def verify(self, key: K, message: bytes, signature: str) -> bool: ...
 
 
 HMACKeySetValue = tuple[bytes, str] | bytes | HMACKey
@@ -88,6 +84,9 @@ class Ed25519Backend(Backend[Key]):
         return key._crypto_key().sign(message).hex()
 
     def verify(self, key: Key, message: bytes, signature: str) -> bool:
+
+        from cryptography.exceptions import InvalidSignature
+
         if isinstance(key, Ed25519PrivateKey):
             public = key._crypto_key().public_key()
         elif isinstance(key, Ed25519PublicKey):

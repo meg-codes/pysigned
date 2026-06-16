@@ -59,8 +59,8 @@ def test_public_key_helper_round_trips():
 # ---------------------------------------------------------------------------
 
 
-def test_id_defaults_to_sha256_of_public_key():
-    assert SK.id == hashlib.sha256(SK.public_bytes()).hexdigest()
+def test_id_defaults_to_sha512_of_public_key():
+    assert SK.id == hashlib.sha512(SK.public_bytes()).hexdigest()
 
 
 def test_private_and_its_public_key_share_an_id():
@@ -259,3 +259,22 @@ def test_signing_with_public_only_keyset_raises():
     signer = URLAuth(Ed25519KeySet([SK.public_key()]))
     with pytest.raises(TypeError, match="public keys cannot sign"):
         signer.sign("https://example.com/")
+
+
+# ---------------------------------------------------------------------------
+# Async methods
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_sign_async():
+    signer = URLAuth(Ed25519KeySet([SK]))
+    signed = await signer.sign_async("https://example.com/")
+    assert signer.verify(signed)
+
+
+@pytest.mark.anyio
+async def test_verify_async():
+    signer = URLAuth(Ed25519KeySet([SK]))
+    signed = signer.sign("https://example.com/")
+    assert await signer.verify_async(signed)

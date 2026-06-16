@@ -1,9 +1,12 @@
 import hashlib
+from dataclasses import dataclass
 from time import time
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from pysigned.backends import Backend, Ed25519Backend, KeySet
+from pysigned.keys import Key
 from pysigned.signature import MIN_KEY_BYTES, HMACKey, HMACKeySet, URLAuth
 
 
@@ -27,8 +30,8 @@ KEY_B = kb(b"b")
 # ---------------------------------------------------------------------------
 
 
-def test_id_defaults_to_sha256_of_key():
-    assert HMACKey(KEY).id == hashlib.sha256(KEY).hexdigest()
+def test_id_defaults_to_sha512_of_key():
+    assert HMACKey(KEY).id == hashlib.sha512(KEY).hexdigest()
 
 
 def test_explicit_id_is_kept():
@@ -122,7 +125,7 @@ def test_keyset_contents_are_read_only():
 
 def test_accepts_raw_bytes():
     ks = HMACKeySet([KEY])
-    assert ks[hashlib.sha256(KEY).hexdigest()].key == KEY
+    assert ks[hashlib.sha512(KEY).hexdigest()].key == KEY
 
 
 def test_accepts_existing_hmackey_unchanged():
@@ -364,3 +367,86 @@ def test_one_shot_iterable_ignore_list_is_not_exhausted():
     signed = signer.sign("https://example.com/p?a=1&utm=x")  # sign uses it
     assert signer.verify(signed.replace("utm=x", "utm=y")) is True  # verify too
     assert signer.verify(signed.replace("utm=x", "utm=z")) is True  # still works
+
+
+# ---------------------------------------------------------------------------
+# Async methods raise for HMAC (use sync path instead)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_sign_async_raises_for_hmac():
+    signer = URLAuth([KEY])
+    with pytest.raises(RuntimeError):
+        await signer.sign_async("https://example.com/")
+
+
+@pytest.mark.anyio
+async def test_verify_async_raises_for_hmac():
+    signer = URLAuth([KEY])
+    signed = signer.sign("https://example.com/")
+    with pytest.raises(RuntimeError):
+        await signer.verify_async(signed)
+
+
+# ---------------------------------------------------------------------------
+# Key base class — abstract hook methods raise NotImplementedError
+# ---------------------------------------------------------------------------
+
+
+def test_key_validate_not_implemented():
+    with pytest.raises(NotImplementedError):
+        Key(KEY)
+
+
+def test_key_id_bytes_not_implemented():
+    @dataclass(frozen=True, eq=False, repr=False)
+    class _NoIdBytes(Key):
+        def _validate(self): pass
+
+    with pytest.raises(NotImplementedError):
+        _NoIdBytes(KEY)
+
+
+# ---------------------------------------------------------------------------
+# Ed25519Backend.verify returns False for non-Ed25519 keys
+# ---------------------------------------------------------------------------
+
+
+def test_ed25519_backend_verify_rejects_wrong_key_type():
+    backend = Ed25519Backend()
+    assert backend.verify(HMACKey(KEY), b"msg", "aabbcc") is False
+
+
+# ---------------------------------------------------------------------------
+# URLAuth async — custom backend hits the catch-all match branch
+# ---------------------------------------------------------------------------
+
+
+class _EchoBackend(Backend):
+    """Minimal backend that isn't HMAC or Ed25519, for hitting case _: branches."""
+
+    def parse_key(self, value):
+        return value
+
+    def sign(self, key, message: bytes) -> str:
+        return "echo"
+
+    def verify(self, key, message: bytes, signature: str) -> bool:
+        return signature == "echo"
+
+
+@pytest.mark.anyio
+async def test_sign_async_custom_backend():
+    ks = KeySet([HMACKey(KEY, "k")], _EchoBackend())
+    signer = URLAuth(ks)
+    signed = await signer.sign_async("https://example.com/")
+    assert "sig=echo" in signed
+
+
+@pytest.mark.anyio
+async def test_verify_async_custom_backend():
+    ks = KeySet([HMACKey(KEY, "k")], _EchoBackend())
+    signer = URLAuth(ks)
+    signed = signer.sign("https://example.com/")
+    assert await signer.verify_async(signed)
