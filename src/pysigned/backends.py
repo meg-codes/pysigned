@@ -23,7 +23,7 @@ class Backend(ABC, Generic[K]):
     A backend turns user-supplied key values into :class:`~pysigned.keys.Key`
     instances and knows how to sign a message and verify a signature with one.
     Everything algorithm-agnostic (URL canonicalisation, expiry, key rotation)
-    lives in :class:`~pysigned.signature.Signer`.
+    lives in :class:`~pysigned.signature.URLAuth`.
     """
 
     @abstractmethod

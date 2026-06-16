@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from functools import partial
 from time import time
 from urllib.parse import (
     parse_qsl,
@@ -6,6 +7,8 @@ from urllib.parse import (
     urlparse,
     ParseResult,
 )
+
+from anyio.to_thread import run_sync
 
 from .backends import (
     Backend,
@@ -39,11 +42,11 @@ __all__ = [
     "HMACKeySet",
     "Key",
     "KeySet",
-    "Signer",
+    "URLAuth",
 ]
 
 
-class Signer:
+class URLAuth:
     """Sign and verify URLs over the URL and an expiry, via a pluggable backend.
 
     A signer is configured with a set of ``keys``. Several keys may be supplied
@@ -77,6 +80,25 @@ class Signer:
         # caller wants ignored. Materialised once so a one-shot iterable works.
         self._excluded = frozenset(("sig", "exp", *(ignore_query_params or ())))
         self.ttl = ttl
+
+    async def sign_async(self, url: str) -> str:
+        match self.backend:
+            case HMACBackend():
+                raise RuntimeError("Use sync backend for best performance with HMAC")
+            case Ed25519Backend():
+                return await run_sync(self.sign, url)
+            case _:
+                return await run_sync(self.sign, url)
+
+    async def verify_async(self, url: str, skew: int = 0):
+        verify = partial(self.verify, url, skew=skew)
+        match self.backend:
+            case HMACBackend():
+                return RuntimeError("Use sync backend for best performance with HMAC")
+            case Ed25519Backend():
+                return await run_sync(verify)
+            case _:
+                return await run_sync(verify)
 
     def sign(self, url: str) -> str:
         """Sign a URL, returning it with ``sig`` and ``exp`` query params added.
