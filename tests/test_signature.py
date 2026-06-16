@@ -91,6 +91,31 @@ def test_short_key_rejected_when_building_a_keyset():
 
 
 # ---------------------------------------------------------------------------
+# Immutability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("attr", ["key", "id"])
+def test_hmackey_is_frozen(attr):
+    key = HMACKey(KEY)
+    with pytest.raises(AttributeError):
+        setattr(key, attr, KEY_A)
+
+
+def test_hmackey_copies_key_so_source_mutation_is_isolated():
+    buf = bytearray(b"k" * MIN_KEY_BYTES)
+    key = HMACKey(buf)
+    buf[0] ^= 0xFF  # mutate the original buffer
+    assert key.key == b"k" * MIN_KEY_BYTES
+
+
+def test_keyset_contents_are_read_only():
+    ks = HMACKeySet([KEY])
+    with pytest.raises(TypeError):
+        ks._keys["x"] = HMACKey(KEY_A)
+
+
+# ---------------------------------------------------------------------------
 # HMACKeySet construction / _parse_value
 # ---------------------------------------------------------------------------
 
