@@ -24,6 +24,9 @@ jobs:
         with:
           enable-cache: true
       
-      - name: Run unit tests 
+      - name: Build
+        run: uv build
+    
+      - name: Publish
         run: uv publish
 
