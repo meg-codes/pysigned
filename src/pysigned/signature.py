@@ -7,7 +7,7 @@ from urllib.parse import (
     ParseResult,
 )
 
-from .backends import KeySet
+from .keys import KeySet
 
 
 class URLAuth:

@@ -1,7 +1,4 @@
 import hmac
-from collections.abc import Iterable, Mapping
-from types import MappingProxyType
-
 
 from .keys import (
     DIGEST,
@@ -87,29 +84,3 @@ class Backend:
         except (InvalidSignature, ValueError):
             return False
         return True
-
-
-class KeySet:
-    """An id-keyed, read-only collection of keys parsed by a backend.
-
-    Keys of different algorithms may be mixed freely; signing and verifying each
-    key dispatches on its type via the :class:`Backend`.
-    """
-
-    def __init__(self, keys: Iterable, backend: Backend | None = None):
-        self.backend = backend or Backend()
-        self._keys: Mapping[str, Key] = MappingProxyType(
-            {k.id: k for k in map(self.backend.parse_key, keys)}
-        )
-
-    def __getitem__(self, key: str):
-        return self._keys[key]
-
-    def __iter__(self):
-        return iter(self._keys.values())
-
-    def __reversed__(self):
-        return reversed(list(self._keys.values()))
-
-    def __len__(self):
-        return len(self._keys)

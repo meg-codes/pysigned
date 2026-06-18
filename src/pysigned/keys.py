@@ -1,5 +1,7 @@
 import hashlib
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from cryptography.exceptions import InvalidSignature  # noqa: F401  (re-exported for backends)
 from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
@@ -131,3 +133,36 @@ class Ed25519PublicKey(Key):
 
     def _id_bytes(self) -> bytes:
         return self.key
+
+
+class KeySet:
+    """An id-keyed, read-only collection of keys parsed by a backend.
+
+    Keys of different algorithms may be mixed freely; signing and verifying each
+    key dispatches on its type via the backend.
+    """
+
+    def __init__(self, keys: Iterable, backend=None):
+        if backend is None:
+            # Deferred to break the keys <-> backends import cycle: backends
+            # imports the key types from this module, so Backend can't be
+            # imported here at module load time.
+            from .backends import Backend
+
+            backend = Backend()
+        self.backend = backend
+        self._keys: Mapping[str, Key] = MappingProxyType(
+            {k.id: k for k in map(backend.parse_key, keys)}
+        )
+
+    def __getitem__(self, key: str):
+        return self._keys[key]
+
+    def __iter__(self):
+        return iter(self._keys.values())
+
+    def __reversed__(self):
+        return reversed(list(self._keys.values()))
+
+    def __len__(self):
+        return len(self._keys)
