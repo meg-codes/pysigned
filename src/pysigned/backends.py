@@ -60,6 +60,11 @@ class Backend:
                 raise ValueError(f"Invalid key value: {value}")
 
     def sign(self, key: Key | Ed25519KeyPair, message: bytes) -> str:
+        """Sign ``message`` with ``key``, returning a hex-encoded signature.
+
+        Raises:
+            TypeError: If ``key`` cannot sign (e.g. an :class:`Ed25519PublicKey`).
+        """
         match key:
             case HMACKey():
                 return hmac.new(bytes(key), message, self.digest).hexdigest()
@@ -77,6 +82,11 @@ class Backend:
         message: bytes,
         signature: str,
     ) -> bool:
+        """Check ``signature`` against ``message`` for ``key``.
+
+        Returns ``False`` (rather than raising) for an unrecognised key type or
+        a malformed/invalid signature.
+        """
         match key:
             case HMACKey():
                 expected = hmac.new(bytes(key), message, self.digest).hexdigest()

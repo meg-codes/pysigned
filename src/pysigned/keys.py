@@ -1,3 +1,5 @@
+import os
+import json
 import hashlib
 from base64 import urlsafe_b64decode
 from collections.abc import Iterable, Mapping
@@ -82,6 +84,8 @@ class HMACKey(Key):
 
 
 class Ed25519PublicKey(Key):
+    """A verify-only Ed25519 public key, with no signing capability."""
+
     public_key: ed25519.Ed25519PublicKey
 
     def _validate(self) -> None:
@@ -126,12 +130,14 @@ class Ed25519KeyPair(KeyLike):
 
     @classmethod
     def generate(cls, id: str = "") -> Self:
+        """Generate a new random Ed25519 keypair."""
         priv_key = ed25519.Ed25519PrivateKey.generate()
         pub_key = priv_key.public_key()
         return cls(priv_key, pub_key, id)
 
     @classmethod
     def from_private_bytes(cls, seed: bytes, id: str = "") -> Self:
+        """Build a keypair from a 32-byte Ed25519 private seed."""
         priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
         pub_key = priv_key.public_key()
         return cls(priv_key, pub_key, id)
@@ -184,6 +190,12 @@ class KeySet:
 
     @classmethod
     def from_jwks(cls, jwks: dict[str, Any], backend: "Backend | None" = None) -> Self:
+        """Build a KeySet from a JWKS (a ``{"keys": [...]}`` mapping of JWKs).
+
+        Each JWK becomes an :class:`HMACKey`, :class:`Ed25519KeyPair`, or
+        :class:`Ed25519PublicKey` depending on its ``kty``/``crv`` and whether a
+        private component (``d``) is present.
+        """
         if not (keys := jwks.get("keys")):
             raise ValueError("No 'keys' provided in JWKS.")
         collected = []
@@ -207,3 +219,15 @@ class KeySet:
                 case _:
                     raise NotImplementedError("Unknown key type in jwks")
         return cls(collected, backend=backend)
+
+    @classmethod
+    def from_env(cls, environment_key: str, backend: "Backend | None" = None) -> Self:
+        """Build a KeySet from a JWKS stored as JSON in an environment variable.
+
+        Raises:
+            ValueError: If ``environment_key`` is unset or empty.
+        """
+        if not (val := os.getenv(environment_key)):
+            raise ValueError(f"{environment_key} unset, cannot import keyset.")
+        jwks = json.loads(val)
+        return cls.from_jwks(jwks, backend)
