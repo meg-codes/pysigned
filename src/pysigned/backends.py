@@ -1,8 +1,6 @@
 import hmac
-from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
-from typing import Generic, TypeVar
 
 
 from .keys import (
@@ -14,41 +12,43 @@ from .keys import (
     Key,
 )
 
-K = TypeVar("K", bound=Key)
+KeyValue = tuple[bytes, str] | bytes | Key
 
 
-class Backend(ABC, Generic[K]):
-    """Algorithm-specific key parsing and signing/verifying.
+class Backend:
+    """Parses key values and signs/verifies with whichever algorithm a key uses.
 
-    A backend turns user-supplied key values into :class:`~pysigned.keys.Key`
-    instances and knows how to sign a message and verify a signature with one.
-    Everything algorithm-agnostic (URL canonicalisation, expiry, key rotation)
-    lives in :class:`~pysigned.signature.URLAuth`.
+    Every key value already carries its own algorithm -- raw bytes and
+    :class:`~pysigned.keys.HMACKey` are symmetric HMAC, while
+    :class:`~pysigned.keys.Ed25519PrivateKey` /
+    :class:`~pysigned.keys.Ed25519PublicKey` are asymmetric -- so the backend
+    dispatches on the key type rather than being fixed to one algorithm. A single
+    :class:`KeySet` (and therefore a single :class:`~pysigned.signature.URLAuth`)
+    can hold HMAC and Ed25519 keys together. Everything algorithm-agnostic (URL
+    canonicalisation, expiry, key rotation) lives in
+    :class:`~pysigned.signature.URLAuth`.
+
+    Args:
+        digest: Hash name used for HMAC keys (default ``sha512``). Ignored by
+            Ed25519 keys.
     """
 
-    @abstractmethod
-    def parse_key(self, value) -> K: ...
-
-    @abstractmethod
-    def sign(self, key: K, message: bytes) -> str: ...
-
-    @abstractmethod
-    def verify(self, key: K, message: bytes, signature: str) -> bool: ...
-
-
-HMACKeySetValue = tuple[bytes, str] | bytes | HMACKey
-
-
-class HMACBackend(Backend[HMACKey]):
     def __init__(self, digest: str = DIGEST):
         self.digest = digest
 
-    def parse_key(self, value: HMACKeySetValue) -> HMACKey:
+    def parse_key(self, value: KeyValue) -> Key:
+        """Wrap a user-supplied key value as a :class:`~pysigned.keys.Key`.
+
+        Already-wrapped keys pass through; raw ``bytes`` or a ``(bytes, id)``
+        tuple become an :class:`~pysigned.keys.HMACKey`. Ed25519 keys must be
+        wrapped explicitly because raw bytes can't distinguish private from
+        public -- and, now, HMAC from Ed25519.
+        """
         match value:
+            case HMACKey() | Ed25519PrivateKey() | Ed25519PublicKey():
+                return value
             case bytes():
                 return HMACKey(value)
-            case HMACKey():
-                return value
             case (_bytes, _id):
                 if not isinstance(_bytes, bytes):
                     raise ValueError("Keys in tuples must be bytes")
@@ -58,39 +58,30 @@ class HMACBackend(Backend[HMACKey]):
             case _:
                 raise ValueError(f"Invalid key value: {value}")
 
-    def sign(self, key: HMACKey, message: bytes) -> str:
-        return hmac.new(bytes(key), message, self.digest).hexdigest()
-
-    def verify(self, key: HMACKey, message: bytes, signature: str) -> bool:
-        expected = self.sign(key, message)
-        # Constant-time comparison to avoid timing attacks.
-        return hmac.compare_digest(expected, signature)
-
-
-class Ed25519Backend(Backend[Key]):
-    def parse_key(self, value) -> Key:
-        if isinstance(value, (Ed25519PrivateKey, Ed25519PublicKey)):
-            return value
-        raise ValueError(
-            "Ed25519 keys must be wrapped as Ed25519PrivateKey or "
-            "Ed25519PublicKey; raw bytes are ambiguous (private vs public)."
-        )
-
     def sign(self, key: Key, message: bytes) -> str:
-        if not isinstance(key, Ed25519PrivateKey):
-            raise TypeError(
-                "signing requires an Ed25519PrivateKey; "
-                f"got {type(key).__name__} (public keys cannot sign)"
-            )
-        return key._crypto_key().sign(message).hex()
+        match key:
+            case HMACKey():
+                return hmac.new(bytes(key), message, self.digest).hexdigest()
+            case Ed25519PrivateKey():
+                return key._crypto_key().sign(message).hex()
+            case _:
+                raise TypeError(
+                    "signing requires an HMACKey or Ed25519PrivateKey; "
+                    f"got {type(key).__name__} (public keys cannot sign)"
+                )
 
     def verify(self, key: Key, message: bytes, signature: str) -> bool:
-        if isinstance(key, Ed25519PrivateKey):
-            public = key._crypto_key().public_key()
-        elif isinstance(key, Ed25519PublicKey):
-            public = key._crypto_key()
-        else:
-            return False
+        match key:
+            case HMACKey():
+                expected = hmac.new(bytes(key), message, self.digest).hexdigest()
+                # Constant-time comparison to avoid timing attacks.
+                return hmac.compare_digest(expected, signature)
+            case Ed25519PrivateKey():
+                public = key._crypto_key().public_key()
+            case Ed25519PublicKey():
+                public = key._crypto_key()
+            case _:
+                return False
         try:
             public.verify(bytes.fromhex(signature), message)
         except (InvalidSignature, ValueError):
@@ -99,12 +90,16 @@ class Ed25519Backend(Backend[Key]):
 
 
 class KeySet:
-    """An id-keyed, read-only collection of keys parsed by a backend."""
+    """An id-keyed, read-only collection of keys parsed by a backend.
 
-    def __init__(self, keys: Iterable, backend: Backend):
-        self.backend = backend
+    Keys of different algorithms may be mixed freely; signing and verifying each
+    key dispatches on its type via the :class:`Backend`.
+    """
+
+    def __init__(self, keys: Iterable, backend: Backend | None = None):
+        self.backend = backend or Backend()
         self._keys: Mapping[str, Key] = MappingProxyType(
-            {k.id: k for k in map(backend.parse_key, keys)}
+            {k.id: k for k in map(self.backend.parse_key, keys)}
         )
 
     def __getitem__(self, key: str):
@@ -118,13 +113,3 @@ class KeySet:
 
     def __len__(self):
         return len(self._keys)
-
-
-class HMACKeySet(KeySet):
-    def __init__(self, keys: Iterable, backend: HMACBackend | None = None):
-        super().__init__(keys, backend or HMACBackend())
-
-
-class Ed25519KeySet(KeySet):
-    def __init__(self, keys: Iterable, backend: Ed25519Backend | None = None):
-        super().__init__(keys, backend or Ed25519Backend())

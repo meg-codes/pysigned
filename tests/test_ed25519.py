@@ -5,10 +5,11 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from pysigned import (
-    Ed25519Backend,
-    Ed25519KeySet,
+    Backend,
     Ed25519PrivateKey,
     Ed25519PublicKey,
+    HMACKey,
+    KeySet,
     URLAuth,
 )
 
@@ -100,40 +101,41 @@ def test_key_copies_seed_so_source_mutation_is_isolated():
 
 
 # ---------------------------------------------------------------------------
-# Ed25519KeySet construction / parse_key
+# KeySet construction / parse_key
 # ---------------------------------------------------------------------------
 
 
 def test_accepts_private_and_public_keys():
     pub = SK_B.public_key()
-    ks = Ed25519KeySet([SK_A, pub])
+    ks = KeySet([SK_A, pub])
     assert ks[SK_A.id] is SK_A
     assert ks[pub.id] is pub
 
 
-def test_raw_bytes_are_rejected_as_ambiguous():
-    with pytest.raises(ValueError, match="ambiguous"):
-        Ed25519KeySet([b"s" * 32])
+def test_raw_bytes_are_read_as_hmac_not_ed25519():
+    # Raw bytes are unambiguously an HMAC key now; Ed25519 keys must be wrapped.
+    (key,) = KeySet([b"k" * 64])
+    assert isinstance(key, HMACKey)
 
 
 def test_len_counts_keys():
-    assert len(Ed25519KeySet([SK_A, SK_B])) == 2
+    assert len(KeySet([SK_A, SK_B])) == 2
 
 
 def test_getitem_missing_raises_keyerror():
     with pytest.raises(KeyError):
-        Ed25519KeySet([SK])["nope"]
+        KeySet([SK])["nope"]
 
 
 def test_keyset_contents_are_read_only():
-    ks = Ed25519KeySet([SK])
+    ks = KeySet([SK])
     with pytest.raises(TypeError):
         ks._keys["x"] = SK_A
 
 
 def test_private_and_matching_public_collapse_by_id():
     # Same identity -> same id -> last one wins.
-    ks = Ed25519KeySet([SK, SK.public_key()])
+    ks = KeySet([SK, SK.public_key()])
     assert len(ks) == 1
 
 
@@ -142,15 +144,15 @@ def test_private_and_matching_public_collapse_by_id():
 # ---------------------------------------------------------------------------
 
 
-def test_signer_uses_ed25519_backend_from_keyset():
-    signer = URLAuth(Ed25519KeySet([SK]))
-    assert isinstance(signer.backend, Ed25519Backend)
+def test_signer_uses_backend_from_keyset():
+    signer = URLAuth(KeySet([SK]))
+    assert isinstance(signer.backend, Backend)
 
 
 def test_signing_key_defaults_to_most_recently_added():
     a = Ed25519PrivateKey(b"a" * 32, id="old")
     b = Ed25519PrivateKey(b"b" * 32, id="new")
-    assert URLAuth(Ed25519KeySet([a, b])).signing_key_id == "new"
+    assert URLAuth(KeySet([a, b])).signing_key_id == "new"
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +161,7 @@ def test_signing_key_defaults_to_most_recently_added():
 
 
 def test_sign_appends_sig_and_exp():
-    signer = URLAuth(Ed25519KeySet([SK]))
+    signer = URLAuth(KeySet([SK]))
     signed = signer.sign("https://example.com/a?b=1")
     query = parse_qs(urlparse(signed).query)
     assert "sig" in query and "exp" in query
@@ -168,15 +170,15 @@ def test_sign_appends_sig_and_exp():
 
 def test_sign_with_private_verify_with_public_only():
     sk = gen()
-    signed = URLAuth(Ed25519KeySet([sk])).sign("https://example.com/a?b=1")
+    signed = URLAuth(KeySet([sk])).sign("https://example.com/a?b=1")
 
     # Verifier side holds only the public key -- no secret.
     pub = Ed25519PublicKey.from_public_bytes(sk.public_bytes())
-    assert URLAuth(Ed25519KeySet([pub])).verify(signed) is True
+    assert URLAuth(KeySet([pub])).verify(signed) is True
 
 
 def test_round_trips_query_that_does_not_re_encode_identically():
-    signer = URLAuth(Ed25519KeySet([SK]))
+    signer = URLAuth(KeySet([SK]))
     signed = signer.sign("https://example.com/p?q=hello world&a=1&a=2")
     assert signer.verify(signed) is True
 
@@ -190,21 +192,21 @@ def test_round_trips_query_that_does_not_re_encode_identically():
     ],
 )
 def test_verify_rejects_tampered_url(tamper):
-    signer = URLAuth(Ed25519KeySet([SK]))
+    signer = URLAuth(KeySet([SK]))
     signed = signer.sign("https://example.com/a?b=1")
     assert signer.verify(tamper(signed)) is False
 
 
 def test_verify_rejects_signature_from_unknown_key():
-    signed = URLAuth(Ed25519KeySet([SK_A])).sign("https://example.com/")
-    assert URLAuth(Ed25519KeySet([SK_B.public_key()])).verify(signed) is False
+    signed = URLAuth(KeySet([SK_A])).sign("https://example.com/")
+    assert URLAuth(KeySet([SK_B.public_key()])).verify(signed) is False
 
 
 def test_verify_accepts_rotated_out_key():
-    old = URLAuth(Ed25519KeySet([Ed25519PrivateKey(b"a" * 32, id="old")]))
+    old = URLAuth(KeySet([Ed25519PrivateKey(b"a" * 32, id="old")]))
     signed = old.sign("https://example.com/")
     rotated = URLAuth(
-        Ed25519KeySet(
+        KeySet(
             [
                 Ed25519PrivateKey(b"a" * 32, id="old"),
                 Ed25519PrivateKey(b"b" * 32, id="new"),
@@ -226,24 +228,24 @@ def test_verify_accepts_rotated_out_key():
     ],
 )
 def test_verify_rejects_missing_or_malformed_params(query):
-    signer = URLAuth(Ed25519KeySet([SK]))
+    signer = URLAuth(KeySet([SK]))
     assert signer.verify(f"https://example.com/?{query}") is False
 
 
 def test_verify_rejects_expired_signature():
-    signer = URLAuth(Ed25519KeySet([SK]), ttl=-100)
+    signer = URLAuth(KeySet([SK]), ttl=-100)
     assert signer.verify(signer.sign("https://example.com/")) is False
 
 
 def test_skew_allows_recently_expired_signature():
-    signer = URLAuth(Ed25519KeySet([SK]), ttl=-100)
+    signer = URLAuth(KeySet([SK]), ttl=-100)
     signed = signer.sign("https://example.com/")
     assert signer.verify(signed, skew=0) is False
     assert signer.verify(signed, skew=200) is True
 
 
 def test_sign_uses_configured_ttl():
-    signer = URLAuth(Ed25519KeySet([SK]), ttl=100)
+    signer = URLAuth(KeySet([SK]), ttl=100)
     signed = signer.sign("https://example.com/")
     exp = int(parse_qs(urlparse(signed).query)["exp"][0])
     assert abs(exp - (int(time()) + 100)) <= 2
@@ -255,6 +257,6 @@ def test_sign_uses_configured_ttl():
 
 
 def test_signing_with_public_only_keyset_raises():
-    signer = URLAuth(Ed25519KeySet([SK.public_key()]))
+    signer = URLAuth(KeySet([SK.public_key()]))
     with pytest.raises(TypeError, match="public keys cannot sign"):
         signer.sign("https://example.com/")

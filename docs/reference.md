@@ -18,10 +18,6 @@ This page is generated from the source docstrings and type annotations.
 
 ## Backends and key sets
 
-::: pysigned.backends.Backend
+::: pysigned.Backend
 
-::: pysigned.backends.KeySet
-
-::: pysigned.HMACKeySet
-
-::: pysigned.Ed25519KeySet
+::: pysigned.KeySet
