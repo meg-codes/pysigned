@@ -13,8 +13,7 @@ Run with:  python examples/sign_urls.py
 import secrets
 
 from pysigned import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
+    Ed25519KeyPair,
     KeySet,
     URLAuth,
 )
@@ -46,18 +45,21 @@ def hmac_demo() -> None:
 def ed25519_demo() -> None:
     print("=== Ed25519 (asymmetric) ===")
 
-    # The signing side holds the private key.
-    private = Ed25519PrivateKey.generate("ed-2025")
-    signer = URLAuth(KeySet([private]), ttl=60)
+    # The signing side holds the keypair (private key plus its public key).
+    keypair = Ed25519KeyPair.generate("ed-2025")
+    signer = URLAuth(KeySet([keypair]), ttl=60)
 
     signed = signer.sign("https://example.com/download?file=archive.zip")
     print("signed: ", signed)
 
     # The verifying side only needs the public key -- it cannot forge new
-    # signatures. The public key shares the private key's id.
-    public = Ed25519PublicKey.from_public_bytes(private.public_bytes(), private.id)
+    # signatures. The public key shares the keypair's id.
+    public = keypair.public()
     verifier = URLAuth(KeySet([public]))
     print("verify (public-only): ", verifier.verify(signed))
+
+    # it can also use the keypair
+    print("verify (keypair): ", signer.verify(signed))
 
     tampered = signed.replace("archive.zip", "secrets.zip")
     print("tampered verify:      ", verifier.verify(tampered))
@@ -70,7 +72,7 @@ def mixed_demo() -> None:
     # One KeySet can hold keys of either algorithm; verify() accepts any of
     # them, so an audience can migrate from HMAC to Ed25519 without a cutover.
     hmac_key = (secrets.token_bytes(64), "legacy-hmac")
-    ed_key = Ed25519PrivateKey.generate("ed-2025")
+    ed_key = Ed25519KeyPair.generate("ed-2025")
     signer = URLAuth(KeySet([hmac_key, ed_key]), signing_key_id="ed-2025")
 
     signed = signer.sign("https://example.com/report?id=42")

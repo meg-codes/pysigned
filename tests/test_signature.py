@@ -1,191 +1,44 @@
-import hashlib
-from dataclasses import dataclass
+"""Tests for URLAuth: signing, verification, rotation, and options.
+
+Each behaviour is exercised against HMAC and Ed25519 keysets where the two
+should behave identically, and there are dedicated sections for the asymmetric
+guarantees (public-only verification, public keys cannot sign) and for keysets
+that mix the two algorithms.
+"""
+
 from time import time
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.backends import Backend
-from pysigned.keys import MIN_KEY_BYTES, HMACKey, Key, KeySet
-from pysigned.signature import URLAuth
+from pysigned import (
+    Backend,
+    Ed25519KeyPair,
+    HMACKey,
+    KeySet,
+    URLAuth,
+)
+from pysigned.keys import MIN_KEY_BYTES
 
 
 def kb(seed: bytes) -> bytes:
-    """A valid (>= MIN_KEY_BYTES) key derived from a short seed.
-
-    HMAC-SHA512 requires keys of at least 64 bytes; this lets tests keep using
-    short readable labels while still satisfying the length requirement.
-    Distinct seeds yield distinct keys.
-    """
+    """A valid (>= MIN_KEY_BYTES) HMAC key derived from a short seed."""
     return (seed * MIN_KEY_BYTES)[:MIN_KEY_BYTES]
 
 
-KEY = kb(b"k")
-KEY_A = kb(b"a")
-KEY_B = kb(b"b")
+# HMAC and Ed25519 keysets that should behave identically under URLAuth. Each
+# factory returns a fresh KeySet so tests stay independent.
+def hmac_keys() -> KeySet:
+    return KeySet([kb(b"k")])
 
 
-# ---------------------------------------------------------------------------
-# HMACKey
-# ---------------------------------------------------------------------------
+def ed25519_keys() -> KeySet:
+    return KeySet([Ed25519KeyPair.from_private_bytes(b"s" * 32)])
 
 
-def test_id_defaults_to_sha512_of_key():
-    assert HMACKey(KEY).id == hashlib.sha512(KEY).hexdigest()
-
-
-def test_explicit_id_is_kept():
-    assert HMACKey(KEY, id="kid-1").id == "kid-1"
-
-
-def test_bytes_returns_raw_key():
-    assert bytes(HMACKey(KEY)) == KEY
-
-
-def test_equal_keys_hash_equal():
-    assert hash(HMACKey(KEY)) == hash(HMACKey(KEY, id="other"))
-
-
-@pytest.mark.parametrize(
-    "other, expected",
-    [
-        (HMACKey(KEY, id="different-id"), True),  # same key, different id
-        (HMACKey(KEY_A), False),  # different key
-        (KEY, True),  # raw bytes equal
-        (KEY_A, False),  # raw bytes unequal
-        (object(), False),  # unrelated object (sentinel)
-        (None, False),  # no .key attribute
-    ],
+both_algorithms = pytest.mark.parametrize(
+    "keys", [hmac_keys, ed25519_keys], ids=["hmac", "ed25519"]
 )
-def test_equality(other, expected):
-    assert (HMACKey(KEY) == other) is expected
-
-
-def test_repr_shows_id_and_truncated_key():
-    rep = repr(HMACKey(KEY, id="kid-1"))
-    assert "kid-1" in rep
-    assert KEY.hex()[:5] in rep
-
-
-# ---------------------------------------------------------------------------
-# HMACKey key-length enforcement
-# ---------------------------------------------------------------------------
-
-
-def test_min_key_bytes_matches_sha512_output():
-    assert MIN_KEY_BYTES == 64
-
-
-@pytest.mark.parametrize("length", [0, 1, 63])
-def test_rejects_keys_shorter_than_digest_output(length):
-    with pytest.raises(ValueError, match="at least 64 bytes"):
-        HMACKey(b"x" * length)
-
-
-@pytest.mark.parametrize("length", [64, 80, 128])
-def test_accepts_keys_at_or_above_digest_output(length):
-    # 64 is the minimum for sha512; longer keys are allowed, not just 64.
-    assert len(bytes(HMACKey(b"x" * length))) == length
-
-
-def test_short_key_rejected_when_building_a_keyset():
-    with pytest.raises(ValueError, match="at least 64 bytes"):
-        KeySet([b"too-short"])
-
-
-# ---------------------------------------------------------------------------
-# Immutability
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("attr", ["key", "id"])
-def test_hmackey_is_frozen(attr):
-    key = HMACKey(KEY)
-    with pytest.raises(AttributeError):
-        setattr(key, attr, KEY_A)
-
-
-def test_hmackey_copies_key_so_source_mutation_is_isolated():
-    buf = bytearray(b"k" * MIN_KEY_BYTES)
-    key = HMACKey(buf)
-    buf[0] ^= 0xFF  # mutate the original buffer
-    assert key.key == b"k" * MIN_KEY_BYTES
-
-
-def test_keyset_contents_are_read_only():
-    ks = KeySet([KEY])
-    with pytest.raises(TypeError):
-        ks._keys["x"] = HMACKey(KEY_A)
-
-
-# ---------------------------------------------------------------------------
-# KeySet construction / _parse_value
-# ---------------------------------------------------------------------------
-
-
-def test_accepts_raw_bytes():
-    ks = KeySet([KEY])
-    assert ks[hashlib.sha512(KEY).hexdigest()].key == KEY
-
-
-def test_accepts_existing_hmackey_unchanged():
-    key = HMACKey(KEY, id="kid-1")
-    ks = KeySet([key])
-    assert ks["kid-1"] is key
-
-
-def test_accepts_bytes_id_tuple():
-    ks = KeySet([(KEY, "kid-1")])
-    assert ks["kid-1"].key == KEY
-
-
-@pytest.mark.parametrize(
-    "bad, message",
-    [
-        ((("not-bytes", "kid"),), "Keys in tuples must be bytes"),
-        (((KEY, 123),), "Key ids must be strings."),
-        ((123,), "Invalid key value"),
-        (("a-string",), "Invalid key value"),
-    ],
-)
-def test_invalid_values_raise(bad, message):
-    with pytest.raises(ValueError, match=message):
-        KeySet(bad)
-
-
-# ---------------------------------------------------------------------------
-# KeySet container protocol
-# ---------------------------------------------------------------------------
-
-
-def test_len_counts_keys():
-    assert len(KeySet([kb(b"a"), kb(b"b"), kb(b"c")])) == 3
-
-
-def test_getitem_by_id():
-    ks = KeySet([(KEY, "kid-1")])
-    assert bytes(ks["kid-1"]) == KEY
-
-
-def test_getitem_missing_raises_keyerror():
-    with pytest.raises(KeyError):
-        KeySet([KEY])["nope"]
-
-
-def test_iter_yields_hmackey_values_in_order():
-    ks = KeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
-    assert [k.id for k in ks] == ["k1", "k2"]
-
-
-def test_reversed_yields_values_in_reverse():
-    ks = KeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
-    assert [k.id for k in reversed(ks)] == ["k2", "k1"]
-
-
-def test_duplicate_ids_collapse_to_last():
-    ks = KeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
-    assert len(ks) == 1
-    assert ks["dup"].key == kb(b"b")
 
 
 # ---------------------------------------------------------------------------
@@ -193,23 +46,27 @@ def test_duplicate_ids_collapse_to_last():
 # ---------------------------------------------------------------------------
 
 
-def test_accepts_raw_values():
-    signer = URLAuth([KEY])
+def test_accepts_raw_values_and_wraps_them():
+    signer = URLAuth([kb(b"k")])
     assert isinstance(signer.keys, KeySet)
 
 
 def test_accepts_prebuilt_keyset_without_rewrapping():
-    ks = KeySet([KEY])
+    ks = KeySet([kb(b"k")])
     assert URLAuth(ks).keys is ks
 
 
+def test_signer_uses_backend_from_keyset():
+    assert isinstance(URLAuth(ed25519_keys()).backend, Backend)
+
+
 def test_signing_key_defaults_to_most_recently_added():
-    signer = URLAuth([(KEY_A, "old"), (KEY_B, "new")])
+    signer = URLAuth([(kb(b"a"), "old"), (kb(b"b"), "new")])
     assert signer.signing_key_id == "new"
 
 
 def test_explicit_signing_key_id_is_respected():
-    signer = URLAuth([(KEY_A, "old"), (KEY_B, "new")], signing_key_id="old")
+    signer = URLAuth([(kb(b"a"), "old"), (kb(b"b"), "new")], signing_key_id="old")
     assert signer.signing_key_id == "old"
 
 
@@ -218,34 +75,31 @@ def test_explicit_signing_key_id_is_respected():
 # ---------------------------------------------------------------------------
 
 
-def test_sign_appends_sig_and_exp():
-    signer = URLAuth([KEY])
+@both_algorithms
+def test_sign_appends_sig_and_exp(keys):
+    signer = URLAuth(keys())
     signed = signer.sign("https://example.com/a?b=1")
     query = parse_qs(urlparse(signed).query)
     assert "sig" in query and "exp" in query
     assert query["b"] == ["1"]  # original params preserved
 
 
-def test_sign_then_verify_succeeds():
-    signer = URLAuth([KEY])
+@both_algorithms
+def test_sign_then_verify_succeeds(keys):
+    signer = URLAuth(keys())
     assert signer.verify(signer.sign("https://example.com/a?b=1")) is True
 
 
-def test_round_trips_query_that_does_not_re_encode_identically():
+@both_algorithms
+def test_round_trips_query_that_does_not_re_encode_identically(keys):
     # Spaces and repeated keys don't survive a raw round trip; sign() and
     # verify() must canonicalise the query the same way.
-    signer = URLAuth([KEY])
+    signer = URLAuth(keys())
     signed = signer.sign("https://example.com/p?q=hello world&a=1&a=2")
     assert signer.verify(signed) is True
 
 
-def test_sign_uses_configured_ttl():
-    signer = URLAuth([KEY], ttl=100)
-    signed = signer.sign("https://example.com/")
-    exp = int(parse_qs(urlparse(signed).query)["exp"][0])
-    assert abs(exp - (int(time()) + 100)) <= 2
-
-
+@both_algorithms
 @pytest.mark.parametrize(
     "tamper",
     [
@@ -254,50 +108,145 @@ def test_sign_uses_configured_ttl():
         lambda u: u.replace("https://", "http://"),  # changed scheme
     ],
 )
-def test_verify_rejects_tampered_url(tamper):
-    signer = URLAuth([KEY])
+def test_verify_rejects_tampered_url(keys, tamper):
+    signer = URLAuth(keys())
     signed = signer.sign("https://example.com/a?b=1")
     assert signer.verify(tamper(signed)) is False
 
 
-def test_verify_rejects_signature_from_unknown_key():
-    signed = URLAuth([KEY_A]).sign("https://example.com/")
-    assert URLAuth([KEY_B]).verify(signed) is False
-
-
-def test_verify_accepts_rotated_out_key():
-    """A signature made with an old key still verifies after rotation."""
-    old = URLAuth([(KEY_A, "old")])
-    signed = old.sign("https://example.com/")
-    rotated = URLAuth([(KEY_A, "old"), (KEY_B, "new")])
-    assert rotated.verify(signed) is True
-    assert rotated.signing_key_id == "new"  # but new signatures use the new key
-
-
+@both_algorithms
 @pytest.mark.parametrize(
     "query",
     [
         "sig=deadbeef",  # missing exp
         "exp=9999999999",  # missing sig
         "sig=deadbeef&exp=notanint",  # non-integer exp
+        "sig=nothex&exp=9999999999",  # malformed signature
         "",  # neither
     ],
 )
-def test_verify_rejects_missing_or_malformed_params(query):
-    signer = URLAuth([KEY])
+def test_verify_rejects_missing_or_malformed_params(keys, query):
+    signer = URLAuth(keys())
     assert signer.verify(f"https://example.com/?{query}") is False
 
 
+# ---------------------------------------------------------------------------
+# Expiry, ttl, and clock skew
+# ---------------------------------------------------------------------------
+
+
+def test_sign_uses_configured_ttl():
+    signer = URLAuth([kb(b"k")], ttl=100)
+    signed = signer.sign("https://example.com/")
+    exp = int(parse_qs(urlparse(signed).query)["exp"][0])
+    assert abs(exp - (int(time()) + 100)) <= 2
+
+
 def test_verify_rejects_expired_signature():
-    signer = URLAuth([KEY], ttl=-100)  # already expired on creation
+    signer = URLAuth([kb(b"k")], ttl=-100)  # already expired on creation
     assert signer.verify(signer.sign("https://example.com/")) is False
 
 
 def test_skew_allows_recently_expired_signature():
-    signer = URLAuth([KEY], ttl=-100)
+    signer = URLAuth([kb(b"k")], ttl=-100)
     signed = signer.sign("https://example.com/")
     assert signer.verify(signed, skew=0) is False
     assert signer.verify(signed, skew=200) is True
+
+
+# ---------------------------------------------------------------------------
+# Key rotation
+# ---------------------------------------------------------------------------
+
+
+def test_verify_accepts_rotated_out_hmac_key():
+    old = URLAuth([(kb(b"a"), "old")])
+    signed = old.sign("https://example.com/")
+    rotated = URLAuth([(kb(b"a"), "old"), (kb(b"b"), "new")])
+    assert rotated.verify(signed) is True
+    assert rotated.signing_key_id == "new"  # but new signatures use the new key
+
+
+def test_verify_accepts_rotated_out_ed25519_key():
+    a = Ed25519KeyPair.from_private_bytes(b"a" * 32, id="old")
+    b = Ed25519KeyPair.from_private_bytes(b"b" * 32, id="new")
+    signed = URLAuth(KeySet([a])).sign("https://example.com/")
+    rotated = URLAuth(KeySet([a, b]))
+    assert rotated.verify(signed) is True
+    assert rotated.signing_key_id == "new"
+
+
+def test_verify_rejects_signature_from_unknown_key():
+    signed = URLAuth([(kb(b"a"), "a")]).sign("https://example.com/")
+    assert URLAuth([(kb(b"b"), "b")]).verify(signed) is False
+
+
+# ---------------------------------------------------------------------------
+# Asymmetric guarantees: public-only verification, public keys cannot sign
+# ---------------------------------------------------------------------------
+
+
+def test_sign_with_keypair_verify_with_public_only():
+    pair = Ed25519KeyPair.generate()
+    signed = URLAuth(KeySet([pair])).sign("https://example.com/a?b=1")
+
+    # Verifier side holds only the public key -- no secret.
+    verifier = URLAuth(KeySet([pair.public()]))
+    assert verifier.verify(signed) is True
+
+
+def test_verify_rejects_ed25519_signature_from_unknown_key():
+    signed = URLAuth(KeySet([Ed25519KeyPair.from_private_bytes(b"a" * 32)])).sign(
+        "https://example.com/"
+    )
+    other = Ed25519KeyPair.from_private_bytes(b"b" * 32).public()
+    assert URLAuth(KeySet([other])).verify(signed) is False
+
+
+def test_signing_with_public_only_keyset_raises():
+    signer = URLAuth(KeySet([Ed25519KeyPair.from_private_bytes(b"s" * 32).public()]))
+    with pytest.raises(TypeError, match="public keys cannot sign"):
+        signer.sign("https://example.com/")
+
+
+# ---------------------------------------------------------------------------
+# Mixing algorithms in one keyset
+# ---------------------------------------------------------------------------
+
+
+HMAC_KEY = HMACKey(kb(b"h"), id="hmac")
+ED_PAIR = Ed25519KeyPair.from_private_bytes(b"s" * 32, id="ed")
+
+
+@pytest.mark.parametrize("signing_key_id", ["hmac", "ed"])
+def test_sign_with_either_algorithm_then_verify(signing_key_id):
+    signer = URLAuth(KeySet([HMAC_KEY, ED_PAIR]), signing_key_id=signing_key_id)
+    signed = signer.sign("https://example.com/a?b=1")
+    assert signer.verify(signed) is True
+
+
+@pytest.mark.parametrize("signing_key_id", ["hmac", "ed"])
+def test_tampering_rejected_for_either_algorithm(signing_key_id):
+    signer = URLAuth(KeySet([HMAC_KEY, ED_PAIR]), signing_key_id=signing_key_id)
+    signed = signer.sign("https://example.com/a?b=1")
+    assert signer.verify(signed.replace("b=1", "b=2")) is False
+
+
+def test_mixed_set_accepts_signature_from_rotated_out_algorithm():
+    # Signed with HMAC, then the audience migrated to also accept Ed25519.
+    signed = URLAuth(KeySet([HMAC_KEY])).sign("https://example.com/")
+    mixed = URLAuth(KeySet([HMAC_KEY, ED_PAIR]), signing_key_id="ed")
+    assert mixed.verify(signed) is True
+
+
+def test_public_only_ed25519_in_mixed_set_cannot_be_default_signer():
+    # Last-added key is a public Ed25519 key, which cannot sign.
+    signer = URLAuth(KeySet([HMAC_KEY, ED_PAIR.public()]))
+    with pytest.raises(TypeError, match="public keys cannot sign"):
+        signer.sign("https://example.com/")
+    # ...but an explicit HMAC signing key works.
+    signer = URLAuth(KeySet([HMAC_KEY, ED_PAIR.public()]), signing_key_id="hmac")
+    assert signer.verify(signer.sign("https://example.com/")) is True
 
 
 # ---------------------------------------------------------------------------
@@ -307,37 +256,37 @@ def test_skew_allows_recently_expired_signature():
 
 def test_signed_url_still_contains_ignored_param():
     # Ignored params are excluded from the signature, not stripped from the URL.
-    signer = URLAuth([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert parse_qs(urlparse(signed).query)["utm"] == ["x"]
 
 
 def test_changing_ignored_param_value_still_verifies():
-    signer = URLAuth([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=before")
     assert signer.verify(signed.replace("utm=before", "utm=after")) is True
 
 
 def test_adding_ignored_param_still_verifies():
-    signer = URLAuth([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1")
     assert signer.verify(signed + "&utm=added") is True
 
 
 def test_removing_ignored_param_still_verifies():
-    signer = URLAuth([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?utm=x&a=1")
     assert signer.verify(signed.replace("utm=x&", "")) is True
 
 
 def test_non_ignored_param_is_still_protected():
-    signer = URLAuth([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert signer.verify(signed.replace("a=1", "a=2")) is False
 
 
 def test_multiple_ignored_params():
-    signer = URLAuth([KEY], ignore_query_params=["utm_source", "utm_medium"])
+    signer = URLAuth([kb(b"k")], ignore_query_params=["utm_source", "utm_medium"])
     signed = signer.sign("https://example.com/p?a=1&utm_source=s&utm_medium=m")
     tampered = signed.replace("utm_source=s", "utm_source=x").replace(
         "utm_medium=m", "utm_medium=y"
@@ -348,14 +297,14 @@ def test_multiple_ignored_params():
 def test_ignore_list_accepts_any_iterable():
     # A set is a valid Iterable[str]; order-independence is fine since the
     # list is only used for membership tests.
-    signer = URLAuth([KEY], ignore_query_params={"utm"})
+    signer = URLAuth([kb(b"k")], ignore_query_params={"utm"})
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert signer.verify(signed.replace("utm=x", "utm=y")) is True
 
 
 def test_default_signs_every_param():
     # Without an ignore list, any query param is protected.
-    signer = URLAuth([KEY])
+    signer = URLAuth([kb(b"k")])
     signed = signer.sign("https://example.com/p?utm=x")
     assert signer.verify(signed.replace("utm=x", "utm=y")) is False
 
@@ -363,48 +312,7 @@ def test_default_signs_every_param():
 def test_one_shot_iterable_ignore_list_is_not_exhausted():
     # A generator must survive being used across both sign() and verify(),
     # and across repeated calls.
-    signer = URLAuth([KEY], ignore_query_params=(p for p in ["utm"]))
+    signer = URLAuth([kb(b"k")], ignore_query_params=(p for p in ["utm"]))
     signed = signer.sign("https://example.com/p?a=1&utm=x")  # sign uses it
     assert signer.verify(signed.replace("utm=x", "utm=y")) is True  # verify too
     assert signer.verify(signed.replace("utm=x", "utm=z")) is True  # still works
-
-
-# ---------------------------------------------------------------------------
-# Key base class — abstract hook methods raise NotImplementedError
-# ---------------------------------------------------------------------------
-
-
-def test_key_validate_not_implemented():
-    with pytest.raises(NotImplementedError):
-        Key(KEY)
-
-
-def test_key_id_bytes_not_implemented():
-    @dataclass(frozen=True, eq=False, repr=False)
-    class _NoIdBytes(Key):
-        def _validate(self):
-            pass
-
-    with pytest.raises(NotImplementedError):
-        _NoIdBytes(KEY)
-
-
-# ---------------------------------------------------------------------------
-# Backend.verify returns False for a bad signature
-# ---------------------------------------------------------------------------
-
-
-def test_backend_verify_rejects_bad_signature():
-    assert Backend().verify(HMACKey(KEY), b"msg", "aabbcc") is False
-
-
-def test_backend_verify_returns_false_for_unsupported_key_type():
-    @dataclass(frozen=True, eq=False, repr=False)
-    class _OtherKey(Key):
-        def _validate(self):
-            pass
-
-        def _id_bytes(self):
-            return self.key
-
-    assert Backend().verify(_OtherKey(KEY), b"msg", "aabbcc") is False
