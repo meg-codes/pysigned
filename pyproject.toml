@@ -1,6 +1,6 @@
 [project]
 name = "pysigned"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sign and verify URLs with an expiry, using HMAC or Ed25519"
 readme = "README.md"
 authors = [
@@ -11,6 +11,7 @@ license = "MIT"
 license-files = ["LICENSE", "THIRD-PARTY-LICENSES"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
