@@ -29,12 +29,18 @@ dependencies = [
 [project.scripts]
 pysigned-gen-key = "pysigned.utils:gen_key"
 
+[project.optional-dependencies]
+fastapi = [
+    "fastapi>=0.111",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pysigned[fastapi]",
     "pip-licenses>=5.5.5",
     "pytest>=9.1.0",
     "pytest-cov>=7.1.0",
@@ -42,6 +48,7 @@ dev = [
     "mkdocstrings[python]>=0.27.0",
     "ruff>=0.15.17",
     "ty>=0.0.49",
+    "httpx>=0.28.1",
 ]
 
 
