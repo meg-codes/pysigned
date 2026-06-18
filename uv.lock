@@ -702,11 +702,9 @@ wheels = [
 
 [[package]]
 name = "pysigned"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "." }
-
-[package.optional-dependencies]
-ed25519 = [
+dependencies = [
     { name = "cryptography" },
 ]
 
@@ -715,7 +713,6 @@ dev = [
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "pip-licenses" },
-    { name = "pysigned", extra = ["ed25519"] },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -723,15 +720,13 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cryptography", marker = "extra == 'ed25519'", specifier = ">=40" }]
-provides-extras = ["ed25519"]
+requires-dist = [{ name = "cryptography", specifier = ">=40" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "mkdocs-material", specifier = ">=9.5.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
     { name = "pip-licenses", specifier = ">=5.5.5" },
-    { name = "pysigned", extras = ["ed25519"] },
     { name = "pytest", specifier = ">=9.1.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.15.17" },

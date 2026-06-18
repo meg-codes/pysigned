@@ -1,25 +1,8 @@
 import hashlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
-
-
-def _load_ed25519():
-    """Import cryptography's ed25519 module, with a helpful error if it's missing.
-
-    ``cryptography`` is an optional dependency; only the Ed25519 key types pull
-    it in, and only when their signing/verifying machinery is actually used.
-    """
-    try:
-        from cryptography.hazmat.primitives.asymmetric import ed25519
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "Ed25519 support requires the optional 'cryptography' dependency. "
-            "Install it with: pip install 'pysigned[ed25519]'"
-        ) from exc
-    return ed25519
+from cryptography.exceptions import InvalidSignature  # noqa: F401  (re-exported for backends)
+from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
 
 
 DIGEST = "sha512"
@@ -99,7 +82,7 @@ class Ed25519PrivateKey(Key):
 
     @classmethod
     def generate(cls, id: str = "") -> "Ed25519PrivateKey":
-        raw = _load_ed25519().Ed25519PrivateKey.generate().private_bytes_raw()
+        raw = _ed25519.Ed25519PrivateKey.generate().private_bytes_raw()
         return cls(raw, id)
 
     @classmethod
@@ -113,8 +96,8 @@ class Ed25519PrivateKey(Key):
                 f"got {len(self.key)}"
             )
 
-    def _crypto_key(self) -> "_ed25519.Ed25519PrivateKey":
-        return _load_ed25519().Ed25519PrivateKey.from_private_bytes(self.key)
+    def _crypto_key(self) -> _ed25519.Ed25519PrivateKey:
+        return _ed25519.Ed25519PrivateKey.from_private_bytes(self.key)
 
     def public_bytes(self) -> bytes:
         return self._crypto_key().public_key().public_bytes_raw()
@@ -141,10 +124,10 @@ class Ed25519PublicKey(Key):
                 f"got {len(self.key)}"
             )
         # Reject points that aren't valid public keys.
-        _load_ed25519().Ed25519PublicKey.from_public_bytes(self.key)
+        _ed25519.Ed25519PublicKey.from_public_bytes(self.key)
 
-    def _crypto_key(self) -> "_ed25519.Ed25519PublicKey":
-        return _load_ed25519().Ed25519PublicKey.from_public_bytes(self.key)
+    def _crypto_key(self) -> _ed25519.Ed25519PublicKey:
+        return _ed25519.Ed25519PublicKey.from_public_bytes(self.key)
 
     def _id_bytes(self) -> bytes:
         return self.key

@@ -5,9 +5,9 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.backends import Ed25519Backend
-from pysigned.keys import Key
-from pysigned.signature import MIN_KEY_BYTES, HMACKey, HMACKeySet, URLAuth
+from pysigned.backends import Ed25519Backend, HMACKeySet
+from pysigned.keys import MIN_KEY_BYTES, HMACKey, Key
+from pysigned.signature import URLAuth
 
 
 def kb(seed: bytes) -> bytes:
