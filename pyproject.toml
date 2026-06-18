@@ -26,6 +26,9 @@ dependencies = [
     "cryptography>=40",
 ]
 
+[project.scripts]
+pysigned-gen-key = "pysigned.utils:gen_key"
+
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
 build-backend = "uv_build"

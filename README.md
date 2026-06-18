@@ -125,6 +125,16 @@ and verifier:
 signer.verify(signed, skew=30)  # accept up to 30s past exp
 ```
 
+### Generating keys
+
+The `pysigned-gen-key` command, installed alongside the package, prints a
+freshly generated key as JSON:
+
+```sh
+pysigned-gen-key --hmac
+pysigned-gen-key --ed25519 --jwks   # wrap in a JWKS for KeySet.from_jwks
+```
+
 ## Examples
 
 A runnable demo of both backends lives in [examples/sign_urls.py](examples/sign_urls.py):

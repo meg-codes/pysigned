@@ -106,6 +106,30 @@ and verifier:
 signer.verify(signed, skew=30)  # accept up to 30s past exp
 ```
 
+## Generating keys
+
+The `pysigned-gen-key` command (installed alongside the package) prints a
+freshly generated key as JSON, for seeding config or secrets storage:
+
+```sh
+pysigned-gen-key --hmac
+pysigned-gen-key --ed25519
+```
+
+Add `--jwks` to wrap the key in a `{"keys": [...]}` JWKS, which
+[`KeySet.from_jwks`][pysigned.KeySet.from_jwks] can load directly:
+
+```sh
+pysigned-gen-key --ed25519 --jwks > keys.json
+```
+
+```python
+import json
+from pysigned import KeySet
+
+keys = KeySet.from_jwks(json.load(open("keys.json")))
+```
+
 ## Runnable example
 
 A runnable demo of both backends lives in `examples/sign_urls.py`:
