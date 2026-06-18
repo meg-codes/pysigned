@@ -27,3 +27,19 @@ import pysigned
 
 print(pysigned.__all__)
 ```
+
+## FastAPI extension
+
+[`SignedRoute`][pysigned.extensions.fastapi.SignedRoute] is an optional
+FastAPI dependency and isn't installed by default. Pull it in with the
+`fastapi` extra:
+
+```sh
+uv add "pysigned[fastapi]"
+```
+
+```sh
+pip install "pysigned[fastapi]"
+```
+
+See [Usage](usage.md#fastapi-integration) for how to wire it into a route.
