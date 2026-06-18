@@ -135,6 +135,24 @@ pysigned-gen-key --hmac
 pysigned-gen-key --ed25519 --jwks   # wrap in a JWKS for KeySet.from_jwks
 ```
 
+### Loading keys from the environment
+
+`KeySet.from_env` reads a JWKS (as produced by `pysigned-gen-key --jwks`) from
+an environment variable, so secrets never touch disk as plain key bytes:
+
+```sh
+export APP_SIGNING_KEYS="$(pysigned-gen-key --ed25519 --jwks)"
+```
+
+```python
+from pysigned import KeySet, URLAuth
+
+keys = KeySet.from_env("APP_SIGNING_KEYS")
+signer = URLAuth(keys, ttl=60)
+```
+
+It raises `ValueError` if the variable is unset or empty.
+
 ## Examples
 
 A runnable demo of both backends lives in [examples/sign_urls.py](examples/sign_urls.py):
@@ -142,6 +160,47 @@ A runnable demo of both backends lives in [examples/sign_urls.py](examples/sign_
 ```sh
 uv run python examples/sign_urls.py
 ```
+
+## FastAPI extension
+
+`pysigned[fastapi]` adds `SignedRoute`, a FastAPI dependency that verifies a
+request's URL signature and raises `403 Forbidden` on failure:
+
+```sh
+uv add "pysigned[fastapi]"
+```
+
+```python
+from fastapi import Depends, FastAPI
+from pysigned import KeySet
+from pysigned.extensions.fastapi import SignedRoute
+
+keys = KeySet.from_env("APP_SIGNING_KEYS")
+verify_signature = SignedRoute(keyset=keys)
+
+app = FastAPI()
+
+
+@app.get("/download", dependencies=[Depends(verify_signature)])
+def download():
+    ...
+```
+
+If the keys aren't known until request time — e.g. looking them up per
+tenant — pass `keyset_getter` instead of `keyset`:
+
+```python
+async def keys_for_request(request) -> KeySet:
+    tenant = request.headers["x-tenant-id"]
+    return await load_keys_for_tenant(tenant)
+
+
+verify_signature = SignedRoute(keyset_getter=keys_for_request)
+```
+
+`signing_key_id`, `ignore_query_params`, and `ttl` are forwarded to the
+underlying `URLAuth`; `error_status` overrides the status code raised on a
+failed verification (default: 403).
 
 ## How it works
 
