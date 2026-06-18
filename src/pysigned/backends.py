@@ -8,9 +8,12 @@ from .keys import (
     Ed25519PublicKey,
     HMACKey,
     Key,
+    KeyLike,
 )
 
-KeyValue = tuple[bytes, str] | bytes | Key
+# A user-supplied key: raw bytes / (bytes, id) become an HMACKey, or an
+# already-wrapped key of any type (all of which are KeyLike).
+KeyValue = tuple[bytes, str] | bytes | KeyLike
 
 
 class Backend:
@@ -34,8 +37,8 @@ class Backend:
     def __init__(self, digest: str = DIGEST):
         self.digest = digest
 
-    def parse_key(self, value: KeyValue) -> Key:
-        """Wrap a user-supplied key value as a :class:`~pysigned.keys.Key`.
+    def parse_key(self, value: KeyValue) -> KeyLike:
+        """Wrap a user-supplied key value as a :class:`~pysigned.keys.KeyLike`.
 
         Already-wrapped keys pass through; raw ``bytes`` or a ``(bytes, id)``
         tuple become an :class:`~pysigned.keys.HMACKey`. Ed25519 keys must be

@@ -1,6 +1,7 @@
 """Tests for the key types and KeySet in pysigned.keys."""
 
 import hashlib
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 
 import pytest
@@ -127,7 +128,9 @@ def test_hmac_is_frozen(attr):
 
 def test_hmac_copies_key_so_source_mutation_is_isolated():
     buf = bytearray(b"k" * MIN_KEY_BYTES)
-    key = HMACKey(buf)
+    # Deliberately pass a bytearray (outside the `bytes` contract) to prove the
+    # constructor takes its own immutable copy of mutable input.
+    key = HMACKey(buf)  # ty: ignore[invalid-argument-type]
     buf[0] ^= 0xFF  # mutate the original buffer
     assert key.key == b"k" * MIN_KEY_BYTES
 
@@ -199,6 +202,22 @@ def test_keypair_id_defaults_to_sha512_of_public_key():
 
 def test_keypair_explicit_id_is_kept():
     assert Ed25519KeyPair.from_private_bytes(b"s" * 32, id="kid-1").id == "kid-1"
+
+
+def test_keypair_accepts_raw_private_bytes():
+    pair = Ed25519KeyPair(b"s" * 32)
+    assert pair.private_key.private_bytes_raw() == b"s" * 32
+
+
+def test_keypair_accepts_raw_public_bytes():
+    pair = Ed25519KeyPair(b"s" * 32, ED_PUBLIC)
+    assert pair.public_key.public_bytes_raw() == ED_PUBLIC
+
+
+def test_keypair_rejects_mismatched_public_key():
+    other_public = Ed25519KeyPair.from_private_bytes(b"a" * 32).public_key
+    with pytest.raises(ValueError, match="Mismatch"):
+        Ed25519KeyPair(b"s" * 32, other_public)
 
 
 def test_keypair_and_its_public_key_share_an_id():
@@ -299,7 +318,9 @@ def test_duplicate_ids_collapse_to_last():
 def test_keyset_contents_are_read_only():
     ks = KeySet([KEY])
     with pytest.raises(TypeError):
-        ks._keys["x"] = HMACKey(KEY_A)
+        # The mapping is a read-only MappingProxyType; the static error here is
+        # exactly the immutability we assert raises at runtime.
+        ks._keys["x"] = HMACKey(KEY_A)  # ty: ignore[invalid-assignment]
 
 
 def test_mixes_algorithms():
@@ -313,3 +334,90 @@ def test_keypair_and_matching_public_collapse_by_id():
     # Same identity -> same id -> last one wins.
     ks = KeySet([PAIR, PAIR.public()])
     assert len(ks) == 1
+
+
+# ---------------------------------------------------------------------------
+# KeySet.from_jwks
+# ---------------------------------------------------------------------------
+
+
+def b64u(raw: bytes) -> str:
+    """base64url without padding, as JWK encodes key material (RFC 7517)."""
+    return urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+ED_SEED = b"s" * 32
+ED_PUBLIC = Ed25519KeyPair.from_private_bytes(ED_SEED).public_key.public_bytes_raw()
+HMAC_SECRET = b"h" * 64
+
+
+def ed25519_keypair_jwk(kid: str = "ed-pair") -> dict:
+    return {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "kid": kid,
+        "x": b64u(ED_PUBLIC),
+        "d": b64u(ED_SEED),
+    }
+
+
+def ed25519_public_jwk(kid: str = "ed-pub") -> dict:
+    return {"kty": "OKP", "crv": "Ed25519", "kid": kid, "x": b64u(ED_PUBLIC)}
+
+
+def hmac_jwk(kid: str = "hmac") -> dict:
+    return {"kty": "oct", "alg": "HS512", "kid": kid, "k": b64u(HMAC_SECRET)}
+
+
+def test_from_jwks_builds_ed25519_keypair():
+    (key,) = KeySet.from_jwks({"keys": [ed25519_keypair_jwk()]})
+    assert isinstance(key, Ed25519KeyPair)
+    assert key.private_key.private_bytes_raw() == ED_SEED
+    assert key.public_key.public_bytes_raw() == ED_PUBLIC
+
+
+def test_from_jwks_builds_public_only_ed25519_when_d_absent():
+    (key,) = KeySet.from_jwks({"keys": [ed25519_public_jwk()]})
+    assert isinstance(key, Ed25519PublicKey)
+    assert bytes(key) == ED_PUBLIC
+
+
+def test_from_jwks_builds_hmac_key():
+    (key,) = KeySet.from_jwks({"keys": [hmac_jwk()]})
+    assert isinstance(key, HMACKey)
+    assert bytes(key) == HMAC_SECRET
+
+
+def test_from_jwks_uses_kid_as_id():
+    ks = KeySet.from_jwks({"keys": [ed25519_keypair_jwk(kid="my-kid")]})
+    assert ks["my-kid"].id == "my-kid"
+
+
+def test_from_jwks_decodes_base64url_without_padding():
+    # A public key whose raw bytes contain 0xFF/0xFE exercises the base64url
+    # alphabet (-, _) and the missing-padding handling.
+    raw = bytes(range(32))
+    jwk = {"kty": "OKP", "crv": "Ed25519", "kid": "k", "x": b64u(raw)}
+    (key,) = KeySet.from_jwks({"keys": [jwk]})
+    assert bytes(key) == raw
+
+
+def test_from_jwks_builds_mixed_set():
+    jwks = {"keys": [hmac_jwk("h"), ed25519_keypair_jwk("p"), ed25519_public_jwk("u")]}
+    ks = KeySet.from_jwks(jwks)
+    assert {k.id for k in ks} == {"h", "p", "u"}
+    assert isinstance(ks["h"], HMACKey)
+    assert isinstance(ks["p"], Ed25519KeyPair)
+    assert isinstance(ks["u"], Ed25519PublicKey)
+
+
+@pytest.mark.parametrize("jwks", [{}, {"keys": []}], ids=["missing", "empty"])
+def test_from_jwks_without_keys_raises(jwks):
+    with pytest.raises(ValueError, match="No 'keys'"):
+        KeySet.from_jwks(jwks)
+
+
+def test_from_jwks_unsupported_key_type_raises():
+    jwks = {"keys": [{"kty": "RSA", "kid": "rsa", "n": "...", "e": "AQAB"}]}
+    with pytest.raises(NotImplementedError, match="Unknown key type"):
+        KeySet.from_jwks(jwks)

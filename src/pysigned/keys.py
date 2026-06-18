@@ -1,8 +1,9 @@
 import hashlib
+from base64 import urlsafe_b64decode
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self, cast
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 if TYPE_CHECKING:
@@ -102,12 +103,25 @@ class Ed25519KeyPair(KeyLike):
 
     def __init__(
         self,
-        private_key: ed25519.Ed25519PrivateKey,
-        public_key: ed25519.Ed25519PublicKey | None = None,
+        private_key: ed25519.Ed25519PrivateKey | bytes,
+        public_key: ed25519.Ed25519PublicKey | bytes | None = None,
         id: str = "",
     ):
+        if isinstance(private_key, bytes):
+            private_key = ed25519.Ed25519PrivateKey.from_private_bytes(private_key)
+        if isinstance(public_key, bytes):
+            public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_key)
+
         self.private_key = private_key
-        self.public_key = public_key or self.private_key.public_key()
+        if public_key:
+            if (
+                cast(ed25519.Ed25519PublicKey, public_key).public_bytes_raw()
+                != self.private_key.public_key().public_bytes_raw()
+            ):
+                raise ValueError("Mismatch private and public ed25519 keys")
+        self.public_key = (
+            cast(ed25519.Ed25519PublicKey, public_key) or self.private_key.public_key()
+        )
         self.id = id or hashlib.sha512(self._id_bytes()).hexdigest()
 
     @classmethod
@@ -146,7 +160,7 @@ class KeySet:
 
             backend = Backend()
         self.backend = backend
-        self._keys: Mapping[str, Key] = MappingProxyType(
+        self._keys: Mapping[str, Key | KeyLike] = MappingProxyType(
             {k.id: k for k in map(backend.parse_key, keys)}
         )
 
@@ -161,3 +175,35 @@ class KeySet:
 
     def __len__(self):
         return len(self._keys)
+
+    @staticmethod
+    def _unpadded_b64decode(s: str) -> bytes:
+        padding_needed = -len(s) % 4
+        padded = s + ("=" * padding_needed)
+        return urlsafe_b64decode(padded)
+
+    @classmethod
+    def from_jwks(cls, jwks: dict[str, Any], backend: "Backend | None" = None) -> Self:
+        if not (keys := jwks.get("keys")):
+            raise ValueError("No 'keys' provided in JWKS.")
+        collected = []
+        for key in keys:
+            kid: str = key.get("kid", "")
+            match key:
+                case {"kty": "OKP", "crv": "Ed25519", "x": public, "d": private}:
+                    private_key = ed25519.Ed25519PrivateKey.from_private_bytes(
+                        (cls._unpadded_b64decode(private))
+                    )
+                    public_key = ed25519.Ed25519PublicKey.from_public_bytes(
+                        cls._unpadded_b64decode(public)
+                    )
+                    collected.append(Ed25519KeyPair(private_key, public_key, id=kid))
+                case {"kty": "OKP", "crv": "Ed25519", "x": public}:
+                    collected.append(
+                        Ed25519PublicKey(cls._unpadded_b64decode(public), id=kid)
+                    )
+                case {"kty": "oct", "alg": "HS512", "k": private}:
+                    collected.append(HMACKey(cls._unpadded_b64decode(private), id=kid))
+                case _:
+                    raise NotImplementedError("Unknown key type in jwks")
+        return cls(collected, backend=backend)

@@ -47,7 +47,7 @@ testpaths = ["tests"]
 addopts = "--cov=pysigned --cov-report=term-missing"
 
 [tool.ty.src]
-include = ["src"]
+include = ["src", "tests"]
 
 [tool.pip-licenses]
 ignore-packages = [
