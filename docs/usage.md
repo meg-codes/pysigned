@@ -130,6 +130,13 @@ from pysigned import KeySet
 keys = KeySet.from_jwks(json.load(open("keys.json")))
 ```
 
+Add `--compact` to emit single-line JSON, which is easier to store in an
+environment variable for [`KeySet.from_env`][pysigned.KeySet.from_env]:
+
+```sh
+pysigned-gen-key --ed25519 --jwks --compact
+```
+
 ## FastAPI integration
 
 Requires the `fastapi` extra (see [Installation](installation.md#fastapi-extension)).

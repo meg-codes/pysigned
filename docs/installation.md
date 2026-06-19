@@ -1,6 +1,6 @@
 # Installation
 
-`pysigned` requires **Python 3.13+**.
+`pysigned` requires **Python 3.11+**.
 
 ## uv
 

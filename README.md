@@ -16,7 +16,7 @@ that can't be altered without invalidating the signature.
 
 ## Installation
 
-Requires Python 3.13+.
+Requires Python 3.11+.
 
 ```sh
 uv add pysigned
