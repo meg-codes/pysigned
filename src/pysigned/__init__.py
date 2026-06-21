@@ -1,3 +1,11 @@
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("pysigned")
+except PackageNotFoundError:
+    # Package is not installed (e.g., running locally during development)
+    __version__ = "0.0.0"
+
 from .backends import Backend
 
 from .keys import (

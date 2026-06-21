@@ -2,11 +2,15 @@
 
 import hashlib
 import json
+import socketserver
+import threading
 from base64 import urlsafe_b64encode
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
+from pysigned import __version__
 from pysigned.backends import Backend
 from pysigned.keys import (
     MIN_KEY_BYTES,
@@ -464,3 +468,156 @@ def test_from_env_invalid_json_raises(monkeypatch):
     monkeypatch.setenv(ENV_VAR, "not json")
     with pytest.raises(json.JSONDecodeError):
         KeySet.from_env(ENV_VAR)
+
+
+# ---------------------------------------------------------------------------
+# KeySet.from_url
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    """Minimal stand-in for an ``http.client.HTTPResponse``.
+
+    Supports the context-manager + ``.read()`` interface that ``from_url``
+    uses, returning a fixed body as raw bytes.
+    """
+
+    def __init__(self, body: str):
+        self._body = body.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def fake_urlopen(monkeypatch, body: str):
+    """Patch ``pysigned.keys.urlopen`` to return ``body``, capturing the request.
+
+    Returns a list that the patched ``urlopen`` appends each received
+    ``Request`` to, so tests can assert on the URL and headers sent.
+    """
+    requests = []
+
+    def _urlopen(request):
+        requests.append(request)
+        return _FakeResponse(body)
+
+    monkeypatch.setattr("pysigned.keys.urlopen", _urlopen)
+    return requests
+
+
+def test_from_url_builds_keyset_from_fetched_jwks(monkeypatch):
+    body = json.dumps({"keys": [hmac_jwk()]})
+    fake_urlopen(monkeypatch, body)
+    (key,) = KeySet.from_url("https://issuer.example/jwks.json")
+    assert isinstance(key, HMACKey)
+    assert bytes(key) == HMAC_SECRET
+
+
+def test_from_url_builds_mixed_set(monkeypatch):
+    body = json.dumps(
+        {"keys": [hmac_jwk("h"), ed25519_keypair_jwk("p"), ed25519_public_jwk("u")]}
+    )
+    fake_urlopen(monkeypatch, body)
+    ks = KeySet.from_url("https://issuer.example/jwks.json")
+    assert {k.id for k in ks} == {"h", "p", "u"}
+
+
+def test_from_url_requests_the_given_url(monkeypatch):
+    requests = fake_urlopen(monkeypatch, json.dumps({"keys": [hmac_jwk()]}))
+    KeySet.from_url("https://issuer.example/jwks.json")
+    assert requests[0].full_url == "https://issuer.example/jwks.json"
+
+
+def test_from_url_sends_user_agent_and_accept_headers(monkeypatch):
+    requests = fake_urlopen(monkeypatch, json.dumps({"keys": [hmac_jwk()]}))
+    KeySet.from_url("https://issuer.example/jwks.json")
+    # urllib title-cases header keys.
+    headers = requests[0].headers
+    assert headers["User-agent"] == f"Pysigned/{__version__}"
+    assert headers["Accept"] == "application/json"
+
+
+def test_from_url_passes_backend_through(monkeypatch):
+    fake_urlopen(monkeypatch, json.dumps({"keys": [hmac_jwk()]}))
+    backend = Backend()
+    ks = KeySet.from_url("https://issuer.example/jwks.json", backend=backend)
+    assert ks.backend is backend
+
+
+def test_from_url_without_keys_raises(monkeypatch):
+    fake_urlopen(monkeypatch, json.dumps({}))
+    with pytest.raises(ValueError, match="No 'keys'"):
+        KeySet.from_url("https://issuer.example/jwks.json")
+
+
+def test_from_url_invalid_json_raises(monkeypatch):
+    fake_urlopen(monkeypatch, "not json")
+    with pytest.raises(json.JSONDecodeError):
+        KeySet.from_url("https://issuer.example/jwks.json")
+
+
+@pytest.fixture
+def jwks_server():
+    """Serve a JWKS over a real loopback HTTP server for the test's duration.
+
+    Yields ``(base_url, captured)`` where ``captured`` records the path and
+    request headers of each request, so the test exercises the genuine
+    ``urllib`` request/response path (not a monkeypatched ``urlopen``).
+    """
+    body = json.dumps(
+        {"keys": [hmac_jwk("h"), ed25519_keypair_jwk("p"), ed25519_public_jwk("u")]}
+    ).encode("utf-8")
+    captured: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            captured.append({"path": self.path, "headers": dict(self.headers)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass  # keep pytest output clean
+
+    class _Server(HTTPServer):
+        # HTTPServer.server_bind() calls socket.getfqdn(), a reverse-DNS lookup
+        # that can hang for tens of seconds; we don't need the FQDN here.
+        def server_bind(self):
+            socketserver.TCPServer.server_bind(self)
+            self.server_name = "127.0.0.1"
+            self.server_port = self.server_address[1]
+
+    server = _Server(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}", captured
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_from_url_against_real_server(jwks_server):
+    base_url, captured = jwks_server
+    ks = KeySet.from_url(f"{base_url}/jwks.json")
+
+    assert {k.id for k in ks} == {"h", "p", "u"}
+    assert isinstance(ks["h"], HMACKey)
+    assert isinstance(ks["p"], Ed25519KeyPair)
+    assert isinstance(ks["u"], Ed25519PublicKey)
+
+    # The real request carried the path and headers from_url builds.
+    (request,) = captured
+    assert request["path"] == "/jwks.json"
+    assert request["headers"]["User-Agent"] == f"Pysigned/{__version__}"
+    assert request["headers"]["Accept"] == "application/json"

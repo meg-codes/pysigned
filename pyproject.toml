@@ -1,6 +1,6 @@
 [project]
 name = "pysigned"
-version = "0.2.4"
+version = "0.2.5"
 description = "Sign and verify URLs with an expiry, using HMAC or Ed25519"
 readme = "README.md"
 authors = [
@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "cryptography>=40",
+    "httpx2>=2.4.0",
 ]
 
 [project.scripts]
@@ -49,7 +50,6 @@ dev = [
     "mkdocstrings[python]>=0.27.0",
     "ruff>=0.15.17",
     "ty>=0.0.49",
-    "httpx>=0.28.1",
 ]
 
 
