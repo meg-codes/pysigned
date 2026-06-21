@@ -5,6 +5,8 @@ module is only imported by code that explicitly opts into it, so the core
 ``pysigned`` package stays installable without FastAPI.
 """
 
+import collections.abc
+
 from typing import Iterable, Protocol
 
 from fastapi import Request, status
@@ -21,7 +23,7 @@ class KeysetGetter(Protocol):
     per-request state, e.g. fetching keys for a tenant from a database.
     """
 
-    async def __call__(self, request: Request) -> KeySet:
+    async def __call__(self, request: Request) -> KeySet | Iterable:
         pass  # pragma: no cover
 
 
@@ -54,7 +56,7 @@ class SignedRoute:
     def __init__(
         self,
         *,
-        keyset: KeySet | None = None,
+        keyset: KeySet | collections.abc.Iterable | None = None,
         keyset_getter: KeysetGetter | None = None,
         signing_key_id: str = "",
         ignore_query_params: Iterable[str] | None = None,
