@@ -5,7 +5,7 @@ from base64 import urlsafe_b64decode
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast, Iterator
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 if TYPE_CHECKING:
@@ -157,7 +157,7 @@ class KeySet:
     key dispatches on its type via the backend.
     """
 
-    def __init__(self, keys: Iterable, backend: "Backend | None" = None):
+    def __init__(self, keys: Iterable[Key], backend: "Backend | None" = None):
         if backend is None:
             # Deferred to break the keys <-> backends import cycle: backends
             # imports the key types from this module, so Backend can't be
@@ -166,14 +166,14 @@ class KeySet:
 
             backend = Backend()
         self.backend = backend
-        self._keys: Mapping[str, Key | KeyLike] = MappingProxyType(
+        self._keys: Mapping[str, Key | Ed25519KeyPair] = MappingProxyType(
             {k.id: k for k in map(backend.parse_key, keys)}
         )
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> KeyLike:
         return self._keys[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Key | Ed25519KeyPair]:
         return iter(self._keys.values())
 
     def __reversed__(self):
