@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Self, cast, Iterator
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 if TYPE_CHECKING:
-    from .backends import Backend
+    from .backends import Backend, KeyValue
 
 DIGEST = "sha512"
 # HMAC keys must be at least the digest's output size (NIST SP 800-107).
@@ -146,6 +146,10 @@ class Ed25519KeyPair(KeyLike):
         """The verify-only public key for this pair, sharing its id."""
         return Ed25519PublicKey(self.public_key.public_bytes_raw(), self.id)
 
+    def __bytes__(self) -> bytes:
+        """The raw public-key bytes (its public identity); never the seed."""
+        return self.public_key.public_bytes_raw()
+
     def _id_bytes(self) -> bytes:
         return self.public_key.public_bytes_raw()
 
@@ -157,7 +161,7 @@ class KeySet:
     key dispatches on its type via the backend.
     """
 
-    def __init__(self, keys: Iterable[Key], backend: "Backend | None" = None):
+    def __init__(self, keys: "Iterable[KeyValue]", backend: "Backend | None" = None):
         if backend is None:
             # Deferred to break the keys <-> backends import cycle: backends
             # imports the key types from this module, so Backend can't be
@@ -170,7 +174,7 @@ class KeySet:
             {k.id: k for k in map(backend.parse_key, keys)}
         )
 
-    def __getitem__(self, key: str) -> KeyLike:
+    def __getitem__(self, key: str) -> "Key | Ed25519KeyPair":
         return self._keys[key]
 
     def __iter__(self) -> Iterator[Key | Ed25519KeyPair]:

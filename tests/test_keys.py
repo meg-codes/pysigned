@@ -241,7 +241,7 @@ def test_keypair_repr_does_not_leak_the_seed():
 
 def test_accepts_raw_bytes_as_hmac():
     ks = KeySet([KEY])
-    assert ks[hashlib.sha512(KEY).hexdigest()].key == KEY
+    assert bytes(ks[hashlib.sha512(KEY).hexdigest()]) == KEY
 
 
 def test_raw_bytes_are_read_as_hmac_not_ed25519():
@@ -252,7 +252,7 @@ def test_raw_bytes_are_read_as_hmac_not_ed25519():
 
 def test_accepts_bytes_id_tuple():
     ks = KeySet([(KEY, "kid-1")])
-    assert ks["kid-1"].key == KEY
+    assert bytes(ks["kid-1"]) == KEY
 
 
 @pytest.mark.parametrize(
@@ -314,7 +314,7 @@ def test_reversed_yields_values_in_reverse():
 def test_duplicate_ids_collapse_to_last():
     ks = KeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
     assert len(ks) == 1
-    assert ks["dup"].key == kb(b"b")
+    assert bytes(ks["dup"]) == kb(b"b")
 
 
 def test_keyset_contents_are_read_only():
