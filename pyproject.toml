@@ -1,6 +1,6 @@
 [project]
 name = "pysigned"
-version = "0.2.2"
+version = "0.2.3"
 description = "Sign and verify URLs with an expiry, using HMAC or Ed25519"
 readme = "README.md"
 authors = [
