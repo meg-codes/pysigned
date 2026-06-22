@@ -30,9 +30,9 @@ made with a rotated-out key keep working until they expire.
 
 ```python
 import secrets
-from pysigned import HMACKeySet, URLAuth
+from pysigned import KeySet, URLAuth
 
-keys = HMACKeySet([
+keys = KeySet([
     (secrets.token_bytes(64), "k-2024"),  # old key, still trusted for verify
     (secrets.token_bytes(64), "k-2025"),  # newest -> used for signing
 ])
@@ -49,25 +49,44 @@ place and verify somewhere less trusted — the verifier can't forge new
 signatures.
 
 ```python
-from pysigned import Ed25519KeySet, Ed25519PrivateKey, Ed25519PublicKey, URLAuth
+from pysigned import Ed25519PrivateKey, Ed25519PublicKey, KeySet, URLAuth
 
 # Signing side holds the private key.
 private = Ed25519PrivateKey.generate("ed-2025")
-signer = URLAuth(Ed25519KeySet([private]), ttl=60)
+signer = URLAuth(KeySet([private]), ttl=60)
 signed = signer.sign("https://example.com/download?file=archive.zip")
 
 # Verifying side only needs the public key. It shares the private key's id.
 public = Ed25519PublicKey.from_public_bytes(private.public_bytes(), private.id)
-verifier = URLAuth(Ed25519KeySet([public]))
+verifier = URLAuth(KeySet([public]))
 
 verifier.verify(signed)  # True
 ```
 
-!!! note "Raw Ed25519 bytes are rejected"
-    The Ed25519 backend will not accept raw bytes, because they are ambiguous
-    between a private seed and a public key. Wrap them as
+!!! note "Raw bytes are read as HMAC keys"
+    A raw `bytes` value (or `(bytes, id)` tuple) is always wrapped as an
+    [`HMACKey`][pysigned.HMACKey]. Ed25519 keys must be wrapped explicitly as
     [`Ed25519PrivateKey`][pysigned.Ed25519PrivateKey] or
-    [`Ed25519PublicKey`][pysigned.Ed25519PublicKey] first.
+    [`Ed25519PublicKey`][pysigned.Ed25519PublicKey], because raw bytes are
+    ambiguous — both between HMAC and Ed25519, and between an Ed25519 private
+    seed and public key.
+
+## Mixing algorithms
+
+A single [`KeySet`][pysigned.KeySet] can hold both HMAC and Ed25519 keys.
+`verify()` accepts any of them, so an audience can migrate from one algorithm to
+another without a flag-day cutover — keep verifying old HMAC signatures while
+signing new ones with Ed25519.
+
+```python
+from pysigned import Ed25519PrivateKey, KeySet, URLAuth
+
+keys = KeySet([
+    (secrets.token_bytes(64), "legacy-hmac"),  # still trusted for verify
+    Ed25519PrivateKey.generate("ed-2025"),     # new signatures use this
+])
+signer = URLAuth(keys, signing_key_id="ed-2025")
+```
 
 ## Ignoring query parameters
 

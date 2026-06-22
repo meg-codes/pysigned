@@ -7,10 +7,7 @@ from urllib.parse import (
     ParseResult,
 )
 
-from .backends import (
-    HMACKeySet,
-    KeySet,
-)
+from .backends import KeySet
 
 
 class URLAuth:
@@ -18,17 +15,21 @@ class URLAuth:
 
     A signer is configured with a set of ``keys``. Several keys may be supplied
     so that keys can be rotated without invalidating signatures that are still
-    in flight: signing uses one key, but :meth:`verify` accepts any of them.
+    in flight: signing uses one key, but :meth:`verify` accepts any of them. The
+    keys may mix algorithms -- an HMAC key and an Ed25519 key can live in the
+    same :class:`~pysigned.backends.KeySet`.
 
-    The cryptography is delegated to the keyset's backend (HMAC by default; pass
-    an :class:`~pysigned.backends.Ed25519KeySet` for Ed25519). Everything else --
-    query canonicalisation, expiry, rotation -- is backend-agnostic.
+    The cryptography is delegated to the keyset's :class:`~pysigned.backends.Backend`,
+    which dispatches on each key's type. Everything else -- query
+    canonicalisation, expiry, rotation -- is backend-agnostic.
 
     Args:
         keys: A :class:`~pysigned.backends.KeySet`, or raw values that are
-            wrapped in an HMAC keyset for backwards compatibility.
+            wrapped in one. Raw bytes are read as HMAC keys; pass wrapped
+            :class:`~pysigned.keys.Ed25519PrivateKey` /
+            :class:`~pysigned.keys.Ed25519PublicKey` for Ed25519.
         signing_key_id: Id of the key to sign with. Defaults to the most
-            recently added key.
+            recently added key (which must be able to sign).
         ttl: Seconds a signature stays valid (default 10 minutes).
     """
 
@@ -40,7 +41,7 @@ class URLAuth:
         ignore_query_params: Iterable[str] | None = None,
         ttl: int = 60 * 10,
     ) -> None:
-        self.keys = keys if isinstance(keys, KeySet) else HMACKeySet(keys)
+        self.keys = keys if isinstance(keys, KeySet) else KeySet(keys)
         self.backend = self.keys.backend
         self.signing_key_id = signing_key_id or next(reversed(self.keys)).id
         # Params excluded from the signed message: our own sig/exp plus any the

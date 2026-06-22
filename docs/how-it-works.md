@@ -32,9 +32,10 @@ don't supply an id, it's a SHA-512 fingerprint:
 
 ## Backends
 
-A [`Backend`][pysigned.backends.Backend] owns the algorithm-specific work:
-parsing key values into `Key` instances, signing, and verifying. Everything
-algorithm-agnostic — URL canonicalisation, expiry, key rotation — lives in
-`URLAuth`. A [`KeySet`][pysigned.backends.KeySet] pairs a collection of keys
-with the backend that parses them. This split is why adding a new algorithm is
-just a new `Backend` and `KeySet`.
+A [`Backend`][pysigned.Backend] owns the algorithm-specific work: parsing key
+values into `Key` instances, signing, and verifying. It isn't tied to one
+algorithm — each key already knows whether it is HMAC or Ed25519, so the backend
+dispatches on the key's type. Everything algorithm-agnostic — URL
+canonicalisation, expiry, key rotation — lives in `URLAuth`. A
+[`KeySet`][pysigned.KeySet] pairs a collection of keys with the backend that
+parses them, and a single keyset can mix HMAC and Ed25519 keys freely.

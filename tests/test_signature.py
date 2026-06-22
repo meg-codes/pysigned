@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.backends import Ed25519Backend, HMACKeySet
+from pysigned.backends import Backend, KeySet
 from pysigned.keys import MIN_KEY_BYTES, HMACKey, Key
 from pysigned.signature import URLAuth
 
@@ -90,7 +90,7 @@ def test_accepts_keys_at_or_above_digest_output(length):
 
 def test_short_key_rejected_when_building_a_keyset():
     with pytest.raises(ValueError, match="at least 64 bytes"):
-        HMACKeySet([b"too-short"])
+        KeySet([b"too-short"])
 
 
 # ---------------------------------------------------------------------------
@@ -113,29 +113,29 @@ def test_hmackey_copies_key_so_source_mutation_is_isolated():
 
 
 def test_keyset_contents_are_read_only():
-    ks = HMACKeySet([KEY])
+    ks = KeySet([KEY])
     with pytest.raises(TypeError):
         ks._keys["x"] = HMACKey(KEY_A)
 
 
 # ---------------------------------------------------------------------------
-# HMACKeySet construction / _parse_value
+# KeySet construction / _parse_value
 # ---------------------------------------------------------------------------
 
 
 def test_accepts_raw_bytes():
-    ks = HMACKeySet([KEY])
+    ks = KeySet([KEY])
     assert ks[hashlib.sha512(KEY).hexdigest()].key == KEY
 
 
 def test_accepts_existing_hmackey_unchanged():
     key = HMACKey(KEY, id="kid-1")
-    ks = HMACKeySet([key])
+    ks = KeySet([key])
     assert ks["kid-1"] is key
 
 
 def test_accepts_bytes_id_tuple():
-    ks = HMACKeySet([(KEY, "kid-1")])
+    ks = KeySet([(KEY, "kid-1")])
     assert ks["kid-1"].key == KEY
 
 
@@ -150,40 +150,40 @@ def test_accepts_bytes_id_tuple():
 )
 def test_invalid_values_raise(bad, message):
     with pytest.raises(ValueError, match=message):
-        HMACKeySet(bad)
+        KeySet(bad)
 
 
 # ---------------------------------------------------------------------------
-# HMACKeySet container protocol
+# KeySet container protocol
 # ---------------------------------------------------------------------------
 
 
 def test_len_counts_keys():
-    assert len(HMACKeySet([kb(b"a"), kb(b"b"), kb(b"c")])) == 3
+    assert len(KeySet([kb(b"a"), kb(b"b"), kb(b"c")])) == 3
 
 
 def test_getitem_by_id():
-    ks = HMACKeySet([(KEY, "kid-1")])
+    ks = KeySet([(KEY, "kid-1")])
     assert bytes(ks["kid-1"]) == KEY
 
 
 def test_getitem_missing_raises_keyerror():
     with pytest.raises(KeyError):
-        HMACKeySet([KEY])["nope"]
+        KeySet([KEY])["nope"]
 
 
 def test_iter_yields_hmackey_values_in_order():
-    ks = HMACKeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
+    ks = KeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
     assert [k.id for k in ks] == ["k1", "k2"]
 
 
 def test_reversed_yields_values_in_reverse():
-    ks = HMACKeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
+    ks = KeySet([(kb(b"a"), "k1"), (kb(b"b"), "k2")])
     assert [k.id for k in reversed(ks)] == ["k2", "k1"]
 
 
 def test_duplicate_ids_collapse_to_last():
-    ks = HMACKeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
+    ks = KeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
     assert len(ks) == 1
     assert ks["dup"].key == kb(b"b")
 
@@ -195,11 +195,11 @@ def test_duplicate_ids_collapse_to_last():
 
 def test_accepts_raw_values():
     signer = URLAuth([KEY])
-    assert isinstance(signer.keys, HMACKeySet)
+    assert isinstance(signer.keys, KeySet)
 
 
 def test_accepts_prebuilt_keyset_without_rewrapping():
-    ks = HMACKeySet([KEY])
+    ks = KeySet([KEY])
     assert URLAuth(ks).keys is ks
 
 
@@ -390,10 +390,21 @@ def test_key_id_bytes_not_implemented():
 
 
 # ---------------------------------------------------------------------------
-# Ed25519Backend.verify returns False for non-Ed25519 keys
+# Backend.verify returns False for a bad signature
 # ---------------------------------------------------------------------------
 
 
-def test_ed25519_backend_verify_rejects_wrong_key_type():
-    backend = Ed25519Backend()
-    assert backend.verify(HMACKey(KEY), b"msg", "aabbcc") is False
+def test_backend_verify_rejects_bad_signature():
+    assert Backend().verify(HMACKey(KEY), b"msg", "aabbcc") is False
+
+
+def test_backend_verify_returns_false_for_unsupported_key_type():
+    @dataclass(frozen=True, eq=False, repr=False)
+    class _OtherKey(Key):
+        def _validate(self):
+            pass
+
+        def _id_bytes(self):
+            return self.key
+
+    assert Backend().verify(_OtherKey(KEY), b"msg", "aabbcc") is False
