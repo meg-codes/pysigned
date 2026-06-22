@@ -7,7 +7,7 @@ that mix the two algorithms.
 """
 
 from time import time
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
 import pytest
 
@@ -97,6 +97,21 @@ def test_round_trips_query_that_does_not_re_encode_identically(keys):
     signer = URLAuth(keys())
     signed = signer.sign("https://example.com/p?q=hello world&a=1&a=2")
     assert signer.verify(signed) is True
+
+
+@both_algorithms
+def test_verify_survives_reordered_query_params(keys):
+    # Canonical signing must not depend on query-param order: a verifier that
+    # receives the same params in a different order still verifies.
+    signer = URLAuth(keys())
+    signed = signer.sign("https://example.com/p?a=1&b=2&c=3")
+
+    parsed = urlparse(signed)
+    reordered_query = urlencode(list(reversed(parse_qsl(parsed.query))))
+    reordered = parsed._replace(query=reordered_query).geturl()
+
+    assert reordered != signed  # the order really did change
+    assert signer.verify(reordered) is True
 
 
 @both_algorithms

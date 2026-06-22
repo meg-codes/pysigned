@@ -99,7 +99,7 @@ class URLAuth:
         Components are joined with a newline (a byte that cannot appear in a URL
         component) so that different field boundaries can never collide.
         """
-        pairs = [(k, v) for k, v in parse_qsl(parsed.query) if k not in self._excluded]
+        pairs = sorted((k, v) for k, v in parse_qsl(parsed.query) if k not in self._excluded)
         canonical = parsed._replace(query=urlencode(pairs))
         parts = (
             str(exp),
