@@ -12,8 +12,12 @@ concurrency:
   group: tests
   cancel-in-progress: true
 
+permissions:
+  id-token: write
+
 jobs:
-  test:
+  publish:
+    environment: pypi
     runs-on: ubuntu-latest
   
     steps:
