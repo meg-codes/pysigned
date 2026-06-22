@@ -130,6 +130,44 @@ from pysigned import KeySet
 keys = KeySet.from_jwks(json.load(open("keys.json")))
 ```
 
+## FastAPI integration
+
+Requires the `fastapi` extra (see [Installation](installation.md#fastapi-extension)).
+[`SignedRoute`][pysigned.extensions.fastapi.SignedRoute] is a dependency that
+verifies the request's URL signature, raising `403 Forbidden` on failure:
+
+```python
+from fastapi import Depends, FastAPI
+from pysigned import KeySet
+from pysigned.extensions.fastapi import SignedRoute
+
+keys = KeySet.from_env("MY_APP_KEYS")
+verify_signature = SignedRoute(keyset=keys)
+
+app = FastAPI()
+
+
+@app.get("/download", dependencies=[Depends(verify_signature)])
+def download():
+    ...
+```
+
+If the keys aren't known until request time — for example, looking them up
+per tenant — pass `keyset_getter` instead of `keyset`:
+
+```python
+async def keys_for_request(request) -> KeySet:
+    tenant = request.headers["x-tenant-id"]
+    return await load_keys_for_tenant(tenant)
+
+
+verify_signature = SignedRoute(keyset_getter=keys_for_request)
+```
+
+`signing_key_id`, `ignore_query_params`, and `ttl` are forwarded to the
+underlying [`URLAuth`][pysigned.URLAuth]. `error_status` overrides the status
+code raised on a failed verification (default: 403).
+
 ## Runnable example
 
 A runnable demo of both backends lives in `examples/sign_urls.py`:
