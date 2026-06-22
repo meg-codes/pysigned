@@ -1,7 +1,7 @@
 import os
 import json
 import hashlib
-from base64 import urlsafe_b64decode
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -57,7 +57,13 @@ class Key(KeyLike):
         # underneath the frozen instance.
         object.__setattr__(self, "key", bytes(self.key))
         if not self.id:
-            object.__setattr__(self, "id", hashlib.sha512(self._id_bytes()).hexdigest())
+            object.__setattr__(
+                self,
+                "id",
+                urlsafe_b64encode(hashlib.sha512(self._id_bytes()).digest()).decode()[
+                    0:12
+                ],
+            )
 
     def _validate(self) -> None:
         raise NotImplementedError
@@ -131,7 +137,12 @@ class Ed25519KeyPair(KeyLike):
         self.public_key = (
             cast(ed25519.Ed25519PublicKey, public_key) or self.private_key.public_key()
         )
-        self.id = id or hashlib.sha512(self._id_bytes()).hexdigest()
+        self.id = (
+            id
+            or urlsafe_b64encode(hashlib.sha512(self._id_bytes()).digest()).decode()[
+                0:12
+            ]
+        )
 
     @classmethod
     def generate(cls, id: str = "") -> Self:
@@ -175,9 +186,17 @@ class KeySet:
 
             backend = Backend()
         self.backend = backend
-        self._keys: Mapping[str, Key | Ed25519KeyPair] = MappingProxyType(
-            {k.id: k for k in map(backend.parse_key, keys)}
-        )
+
+        keys = [k for k in map(backend.parse_key, keys)]
+
+        mapping = {}
+
+        for k in keys:
+            if k.id in mapping:
+                raise ValueError(f"Duplicate kid detected: {k.id}")
+            mapping[k.id] = k
+
+        self._keys: Mapping[str, Key | Ed25519KeyPair] = MappingProxyType(mapping)
 
     def __getitem__(self, key: str) -> "Key | Ed25519KeyPair":
         return self._keys[key]
