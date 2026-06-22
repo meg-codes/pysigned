@@ -16,8 +16,8 @@ This page is generated from the source docstrings and type annotations.
 
 ::: pysigned.Ed25519PublicKey
 
-## Backends and key sets
+::: pysigned.KeySet
+
+## Backend
 
 ::: pysigned.Backend
-
-::: pysigned.KeySet

@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.backends import Backend, KeySet
-from pysigned.keys import MIN_KEY_BYTES, HMACKey, Key
+from pysigned.backends import Backend
+from pysigned.keys import MIN_KEY_BYTES, HMACKey, Key, KeySet
 from pysigned.signature import URLAuth
 
 
