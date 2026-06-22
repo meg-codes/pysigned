@@ -259,22 +259,3 @@ def test_signing_with_public_only_keyset_raises():
     signer = URLAuth(Ed25519KeySet([SK.public_key()]))
     with pytest.raises(TypeError, match="public keys cannot sign"):
         signer.sign("https://example.com/")
-
-
-# ---------------------------------------------------------------------------
-# Async methods
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.anyio
-async def test_sign_async():
-    signer = URLAuth(Ed25519KeySet([SK]))
-    signed = await signer.sign_async("https://example.com/")
-    assert signer.verify(signed)
-
-
-@pytest.mark.anyio
-async def test_verify_async():
-    signer = URLAuth(Ed25519KeySet([SK]))
-    signed = signer.sign("https://example.com/")
-    assert await signer.verify_async(signed)

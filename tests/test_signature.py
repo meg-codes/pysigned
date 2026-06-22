@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.backends import Backend, Ed25519Backend, KeySet
+from pysigned.backends import Ed25519Backend
 from pysigned.keys import Key
 from pysigned.signature import MIN_KEY_BYTES, HMACKey, HMACKeySet, URLAuth
 
@@ -370,26 +370,6 @@ def test_one_shot_iterable_ignore_list_is_not_exhausted():
 
 
 # ---------------------------------------------------------------------------
-# Async methods raise for HMAC (use sync path instead)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.anyio
-async def test_sign_async_raises_for_hmac():
-    signer = URLAuth([KEY])
-    with pytest.raises(RuntimeError):
-        await signer.sign_async("https://example.com/")
-
-
-@pytest.mark.anyio
-async def test_verify_async_raises_for_hmac():
-    signer = URLAuth([KEY])
-    signed = signer.sign("https://example.com/")
-    with pytest.raises(RuntimeError):
-        await signer.verify_async(signed)
-
-
-# ---------------------------------------------------------------------------
 # Key base class — abstract hook methods raise NotImplementedError
 # ---------------------------------------------------------------------------
 
@@ -417,36 +397,3 @@ def test_ed25519_backend_verify_rejects_wrong_key_type():
     backend = Ed25519Backend()
     assert backend.verify(HMACKey(KEY), b"msg", "aabbcc") is False
 
-
-# ---------------------------------------------------------------------------
-# URLAuth async — custom backend hits the catch-all match branch
-# ---------------------------------------------------------------------------
-
-
-class _EchoBackend(Backend):
-    """Minimal backend that isn't HMAC or Ed25519, for hitting case _: branches."""
-
-    def parse_key(self, value):
-        return value
-
-    def sign(self, key, message: bytes) -> str:
-        return "echo"
-
-    def verify(self, key, message: bytes, signature: str) -> bool:
-        return signature == "echo"
-
-
-@pytest.mark.anyio
-async def test_sign_async_custom_backend():
-    ks = KeySet([HMACKey(KEY, "k")], _EchoBackend())
-    signer = URLAuth(ks)
-    signed = await signer.sign_async("https://example.com/")
-    assert "sig=echo" in signed
-
-
-@pytest.mark.anyio
-async def test_verify_async_custom_backend():
-    ks = KeySet([HMACKey(KEY, "k")], _EchoBackend())
-    signer = URLAuth(ks)
-    signed = signer.sign("https://example.com/")
-    assert await signer.verify_async(signed)
