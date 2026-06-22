@@ -48,6 +48,12 @@ A private key signs; a public key only verifies. Use this when you sign in one
 place and verify somewhere less trusted — the verifier can't forge new
 signatures.
 
+!!! note "Requires the `ed25519` extra"
+    Ed25519 depends on [`cryptography`](https://pypi.org/project/cryptography/),
+    installed via `pip install 'pysigned[ed25519]'`. Without it, importing the
+    Ed25519 key types still works, but using them raises `ModuleNotFoundError`
+    with an install hint. See [Installation](installation.md).
+
 ```python
 from pysigned import Ed25519KeySet, Ed25519PrivateKey, Ed25519PublicKey, URLAuth
 

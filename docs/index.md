@@ -7,6 +7,8 @@ that can't be altered without invalidating the signature.
 
 - **Two backends.** HMAC (symmetric) by default, or Ed25519 (asymmetric) when
   the signer and verifier shouldn't share a secret.
+- **No required dependencies.** The HMAC backend is pure standard library;
+  Ed25519 is an optional `pysigned[ed25519]` extra.
 - **Key rotation.** Configure several keys; signing uses one, verification
   accepts any of them, so you can roll keys without breaking links in flight.
 - **Canonical signing.** The query string is normalised before signing, so the
