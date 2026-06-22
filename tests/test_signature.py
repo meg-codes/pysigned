@@ -50,11 +50,11 @@ def test_equal_keys_hash_equal():
     "other, expected",
     [
         (HMACKey(KEY, id="different-id"), True),  # same key, different id
-        (HMACKey(KEY_A), False),                  # different key
-        (KEY, True),                              # raw bytes equal
-        (KEY_A, False),                           # raw bytes unequal
-        (object(), False),                        # unrelated object (sentinel)
-        (None, False),                            # no .key attribute
+        (HMACKey(KEY_A), False),  # different key
+        (KEY, True),  # raw bytes equal
+        (KEY_A, False),  # raw bytes unequal
+        (object(), False),  # unrelated object (sentinel)
+        (None, False),  # no .key attribute
     ],
 )
 def test_equality(other, expected):
@@ -249,8 +249,8 @@ def test_sign_uses_configured_ttl():
 @pytest.mark.parametrize(
     "tamper",
     [
-        lambda u: u.replace("b=1", "b=2"),       # changed query value
-        lambda u: u.replace("/a?", "/evil?"),    # changed path
+        lambda u: u.replace("b=1", "b=2"),  # changed query value
+        lambda u: u.replace("/a?", "/evil?"),  # changed path
         lambda u: u.replace("https://", "http://"),  # changed scheme
     ],
 )
@@ -277,10 +277,10 @@ def test_verify_accepts_rotated_out_key():
 @pytest.mark.parametrize(
     "query",
     [
-        "sig=deadbeef",          # missing exp
-        "exp=9999999999",        # missing sig
+        "sig=deadbeef",  # missing exp
+        "exp=9999999999",  # missing sig
         "sig=deadbeef&exp=notanint",  # non-integer exp
-        "",                      # neither
+        "",  # neither
     ],
 )
 def test_verify_rejects_missing_or_malformed_params(query):
@@ -382,7 +382,8 @@ def test_key_validate_not_implemented():
 def test_key_id_bytes_not_implemented():
     @dataclass(frozen=True, eq=False, repr=False)
     class _NoIdBytes(Key):
-        def _validate(self): pass
+        def _validate(self):
+            pass
 
     with pytest.raises(NotImplementedError):
         _NoIdBytes(KEY)
@@ -396,4 +397,3 @@ def test_key_id_bytes_not_implemented():
 def test_ed25519_backend_verify_rejects_wrong_key_type():
     backend = Ed25519Backend()
     assert backend.verify(HMACKey(KEY), b"msg", "aabbcc") is False
-
