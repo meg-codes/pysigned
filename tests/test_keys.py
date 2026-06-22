@@ -32,6 +32,11 @@ def kb(seed: bytes) -> bytes:
     return (seed * MIN_KEY_BYTES)[:MIN_KEY_BYTES]
 
 
+def default_id(material: bytes) -> str:
+    """The default key id: base64url of SHA-512(material), truncated to 12 chars."""
+    return urlsafe_b64encode(hashlib.sha512(material).digest()).decode()[:12]
+
+
 KEY = kb(b"k")
 KEY_A = kb(b"a")
 KEY_B = kb(b"b")
@@ -68,7 +73,7 @@ def test_key_id_bytes_not_implemented():
 
 
 def test_hmac_id_defaults_to_sha512_of_key():
-    assert HMACKey(KEY).id == hashlib.sha512(KEY).hexdigest()
+    assert HMACKey(KEY).id == default_id(KEY)
 
 
 def test_hmac_explicit_id_is_kept():
@@ -159,7 +164,7 @@ def test_public_key_bytes_returns_raw_public_key():
 
 def test_public_key_id_defaults_to_sha512_of_public_key():
     raw = PAIR.public_key.public_bytes_raw()
-    assert Ed25519PublicKey(raw).id == hashlib.sha512(raw).hexdigest()
+    assert Ed25519PublicKey(raw).id == default_id(raw)
 
 
 def test_public_key_explicit_id_is_kept():
@@ -203,7 +208,7 @@ def test_private_seed_must_be_32_bytes(length):
 
 def test_keypair_id_defaults_to_sha512_of_public_key():
     raw = PAIR.public_key.public_bytes_raw()
-    assert PAIR.id == hashlib.sha512(raw).hexdigest()
+    assert PAIR.id == default_id(raw)
 
 
 def test_keypair_explicit_id_is_kept():
@@ -245,7 +250,7 @@ def test_keypair_repr_does_not_leak_the_seed():
 
 def test_accepts_raw_bytes_as_hmac():
     ks = KeySet([KEY])
-    assert bytes(ks[hashlib.sha512(KEY).hexdigest()]) == KEY
+    assert bytes(ks[default_id(KEY)]) == KEY
 
 
 def test_raw_bytes_are_read_as_hmac_not_ed25519():
@@ -315,10 +320,9 @@ def test_reversed_yields_values_in_reverse():
     assert [k.id for k in reversed(ks)] == ["k2", "k1"]
 
 
-def test_duplicate_ids_collapse_to_last():
-    ks = KeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
-    assert len(ks) == 1
-    assert bytes(ks["dup"]) == kb(b"b")
+def test_duplicate_ids_raise():
+    with pytest.raises(ValueError, match="Duplicate kid detected: dup"):
+        KeySet([(kb(b"a"), "dup"), (kb(b"b"), "dup")])
 
 
 def test_keyset_contents_are_read_only():
@@ -336,10 +340,10 @@ def test_mixes_algorithms():
     assert ks[PAIR_A.id] is PAIR_A
 
 
-def test_keypair_and_matching_public_collapse_by_id():
-    # Same identity -> same id -> last one wins.
-    ks = KeySet([PAIR, PAIR.public()])
-    assert len(ks) == 1
+def test_keypair_and_matching_public_raise_on_duplicate_id():
+    # Same identity -> same id -> rejected as a duplicate.
+    with pytest.raises(ValueError, match="Duplicate kid detected"):
+        KeySet([PAIR, PAIR.public()])
 
 
 # ---------------------------------------------------------------------------

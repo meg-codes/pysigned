@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 def jwk_hmac() -> dict:
     """Generate a random HMAC key, returned as a JWK JSON string."""
     key = secrets.token_bytes(64)
-    kid = hashlib.sha512(key).hexdigest()
+    kid = urlsafe_b64encode(hashlib.sha512(key).digest()).decode()[0:12]
     k = urlsafe_b64encode(key).decode().rstrip("=")
     return {"kty": "oct", "use": "sig", "alg": "HS512", "kid": kid, "k": k}
 
@@ -19,7 +19,9 @@ def jwk_ed25519() -> dict:
     """Generate a random Ed25519 keypair, returned as a JWK JSON string."""
     private = ed25519.Ed25519PrivateKey.generate()
     public = private.public_key()
-    kid = hashlib.sha512(public.public_bytes_raw()).hexdigest()
+    kid = urlsafe_b64encode(
+        hashlib.sha512(public.public_bytes_raw()).digest()
+    ).decode()[0:12]
     x = urlsafe_b64encode(public.public_bytes_raw()).decode().rstrip("=")
     d: str = urlsafe_b64encode(private.private_bytes_raw()).decode().rstrip("=")
     return {"kty": "OKP", "use": "sig", "crv": "Ed25519", "kid": kid, "x": x, "d": d}

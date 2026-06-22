@@ -265,6 +265,90 @@ def test_public_only_ed25519_in_mixed_set_cannot_be_default_signer():
 
 
 # ---------------------------------------------------------------------------
+# require_kid: signer pins verification to the single key named by `kid`
+# ---------------------------------------------------------------------------
+
+
+@both_algorithms
+def test_require_kid_signs_with_kid_of_signing_key(keys):
+    signer = URLAuth(keys(), require_kid=True)
+    signed = signer.sign("https://example.com/")
+    assert parse_qs(urlparse(signed).query)["kid"] == [signer.signing_key_id]
+
+
+@both_algorithms
+def test_default_does_not_emit_kid(keys):
+    signer = URLAuth(keys())
+    signed = signer.sign("https://example.com/")
+    assert "kid" not in parse_qs(urlparse(signed).query)
+
+
+@both_algorithms
+def test_require_kid_round_trips(keys):
+    signer = URLAuth(keys(), require_kid=True)
+    assert signer.verify(signer.sign("https://example.com/a?b=1")) is True
+
+
+def test_require_kid_rejects_url_without_kid():
+    # A require_kid signer will not fall back to scanning the keyset.
+    signer = URLAuth([(kb(b"a"), "a")], require_kid=True)
+    unsigned_kid = URLAuth([(kb(b"a"), "a")]).sign("https://example.com/")
+    assert "kid" not in parse_qs(urlparse(unsigned_kid).query)
+    assert signer.verify(unsigned_kid) is False
+
+
+def test_require_kid_pointing_at_unknown_key_rejected():
+    signer = URLAuth([(kb(b"a"), "a")], require_kid=True)
+    signed = signer.sign("https://example.com/")
+    assert signer.verify(signed.replace("kid=a", "kid=nope")) is False
+
+
+def test_require_kid_restricts_verification_to_the_named_key_alone():
+    # The signature is made by "new", but the URL is rewritten to claim kid=old.
+    # Even though the keyset still holds "new" (which a full scan would accept),
+    # pinning to "old" alone must reject it.
+    full = URLAuth([(kb(b"a"), "old"), (kb(b"b"), "new")], require_kid=True)
+    signed = full.sign("https://example.com/")  # signed by "new", kid=new
+    forged = signed.replace("kid=new", "kid=old")
+    assert full.verify(forged) is False
+    # Sanity: untouched, it verifies.
+    assert full.verify(signed) is True
+
+
+def test_kid_is_not_part_of_the_signed_message():
+    # kid is excluded from the canonical message, so changing its *value* cannot
+    # itself break the signature -- it only redirects which key is consulted.
+    signer = URLAuth([(kb(b"a"), "real")], require_kid=True)
+    signed = signer.sign("https://example.com/")
+    # Redirected to a missing key: only that key is tried, so verification fails
+    # even though the signature is otherwise valid.
+    assert signer.verify(signed.replace("kid=real", "kid=ghost")) is False
+
+
+def test_kid_ignored_when_not_required():
+    # Without require_kid, a stray kid in the URL is ignored: verification still
+    # scans the whole set, so even a bogus kid value verifies.
+    signer = URLAuth([(kb(b"a"), "a")])
+    signed = signer.sign("https://example.com/")
+    assert signer.verify(signed + "&kid=bogus") is True
+
+
+def test_require_kid_pins_to_correct_key_in_mixed_set():
+    # Signed with the Ed25519 key; verification succeeds by checking only that
+    # key, not by scanning the HMAC key too.
+    signer = URLAuth(KeySet([HMAC_KEY, ED_PAIR]), signing_key_id="ed", require_kid=True)
+    signed = signer.sign("https://example.com/a?b=1")
+    assert parse_qs(urlparse(signed).query)["kid"] == ["ed"]
+    assert signer.verify(signed) is True
+
+
+def test_require_kid_url_with_tampered_path_is_rejected():
+    signer = URLAuth([(kb(b"k"), "k")], require_kid=True)
+    signed = signer.sign("https://example.com/a?b=1")
+    assert signer.verify(signed.replace("b=1", "b=2")) is False
+
+
+# ---------------------------------------------------------------------------
 # ignore_query_params
 # ---------------------------------------------------------------------------
 

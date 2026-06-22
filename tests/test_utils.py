@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from base64 import urlsafe_b64decode
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 import pytest
 
@@ -12,6 +12,11 @@ from pysigned.utils import gen_key, jwk_ed25519, jwk_hmac
 def b64u_decode(s: str) -> bytes:
     padding_needed = -len(s) % 4
     return urlsafe_b64decode(s + ("=" * padding_needed))
+
+
+def expected_kid(material: bytes) -> str:
+    """The kid format: base64url of SHA-512(material), truncated to 12 chars."""
+    return urlsafe_b64encode(hashlib.sha512(material).digest()).decode()[:12]
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +39,7 @@ def test_jwk_hmac_key_is_64_bytes():
 def test_jwk_hmac_kid_is_sha512_of_key():
     jwk = jwk_hmac()
     key = b64u_decode(jwk["k"])
-    assert jwk["kid"] == hashlib.sha512(key).hexdigest()
+    assert jwk["kid"] == expected_kid(key)
 
 
 def test_jwk_hmac_distinct_each_call():
@@ -62,7 +67,7 @@ def test_jwk_ed25519_keys_are_32_bytes():
 def test_jwk_ed25519_kid_is_sha512_of_public_key():
     jwk = jwk_ed25519()
     public = b64u_decode(jwk["x"])
-    assert jwk["kid"] == hashlib.sha512(public).hexdigest()
+    assert jwk["kid"] == expected_kid(public)
 
 
 def test_jwk_ed25519_x_matches_d():
