@@ -1,11 +1,13 @@
 """Tests for the key types and KeySet in pysigned.keys."""
 
 import hashlib
+import json
 from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 
 import pytest
 
+from pysigned.backends import Backend
 from pysigned.keys import (
     MIN_KEY_BYTES,
     Ed25519KeyPair,
@@ -421,3 +423,44 @@ def test_from_jwks_unsupported_key_type_raises():
     jwks = {"keys": [{"kty": "RSA", "kid": "rsa", "n": "...", "e": "AQAB"}]}
     with pytest.raises(NotImplementedError, match="Unknown key type"):
         KeySet.from_jwks(jwks)
+
+
+# ---------------------------------------------------------------------------
+# KeySet.from_env
+# ---------------------------------------------------------------------------
+
+ENV_VAR = "PYSIGNED_TEST_KEYS"
+
+
+def test_from_env_builds_keyset_from_json_jwks(monkeypatch):
+    jwks = json.dumps({"keys": [hmac_jwk()]})
+    monkeypatch.setenv(ENV_VAR, jwks)
+    (key,) = KeySet.from_env(ENV_VAR)
+    assert isinstance(key, HMACKey)
+    assert bytes(key) == HMAC_SECRET
+
+
+def test_from_env_passes_backend_through(monkeypatch):
+    jwks = json.dumps({"keys": [hmac_jwk()]})
+    monkeypatch.setenv(ENV_VAR, jwks)
+    backend = Backend()
+    ks = KeySet.from_env(ENV_VAR, backend=backend)
+    assert ks.backend is backend
+
+
+def test_from_env_unset_raises(monkeypatch):
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    with pytest.raises(ValueError, match=f"{ENV_VAR} unset"):
+        KeySet.from_env(ENV_VAR)
+
+
+def test_from_env_empty_raises(monkeypatch):
+    monkeypatch.setenv(ENV_VAR, "")
+    with pytest.raises(ValueError, match=f"{ENV_VAR} unset"):
+        KeySet.from_env(ENV_VAR)
+
+
+def test_from_env_invalid_json_raises(monkeypatch):
+    monkeypatch.setenv(ENV_VAR, "not json")
+    with pytest.raises(json.JSONDecodeError):
+        KeySet.from_env(ENV_VAR)
