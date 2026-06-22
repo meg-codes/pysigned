@@ -21,12 +21,12 @@ constant-time to avoid timing attacks.
 
 ## Keys and ids
 
-Every [`Key`][pysigned.keys.Key] carries raw bytes and a stable `id`. If you
-don't supply an id, it's a SHA-512 fingerprint:
+Every key carries a stable `id`. If you don't supply one, it's a SHA-512
+fingerprint:
 
 - An [`HMACKey`][pysigned.HMACKey] fingerprints the secret itself (safe because
   SHA-512 is one-way, and `repr` truncates).
-- An [`Ed25519PrivateKey`][pysigned.Ed25519PrivateKey] fingerprints its *public*
+- An [`Ed25519KeyPair`][pysigned.Ed25519KeyPair] fingerprints its *public*
   bytes, so it shares the id of the matching
   [`Ed25519PublicKey`][pysigned.Ed25519PublicKey] and never leaks the seed.
 

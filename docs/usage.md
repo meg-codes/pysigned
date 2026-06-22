@@ -44,20 +44,20 @@ signer = URLAuth(keys, signing_key_id="k-2024")
 
 ## Ed25519 (asymmetric)
 
-A private key signs; a public key only verifies. Use this when you sign in one
-place and verify somewhere less trusted — the verifier can't forge new
-signatures.
+A keypair signs; a public key only verifies. Use this when you sign in one
+place and verify somewhere less trusted — the verifier holds only the public
+key and can't forge new signatures.
 
 ```python
-from pysigned import Ed25519PrivateKey, Ed25519PublicKey, KeySet, URLAuth
+from pysigned import Ed25519KeyPair, KeySet, URLAuth
 
-# Signing side holds the private key.
-private = Ed25519PrivateKey.generate("ed-2025")
-signer = URLAuth(KeySet([private]), ttl=60)
+# Signing side holds the keypair (private key plus its public key).
+keypair = Ed25519KeyPair.generate("ed-2025")
+signer = URLAuth(KeySet([keypair]), ttl=60)
 signed = signer.sign("https://example.com/download?file=archive.zip")
 
-# Verifying side only needs the public key. It shares the private key's id.
-public = Ed25519PublicKey.from_public_bytes(private.public_bytes(), private.id)
+# Verifying side only needs the public key. It shares the keypair's id.
+public = keypair.public()
 verifier = URLAuth(KeySet([public]))
 
 verifier.verify(signed)  # True
@@ -66,10 +66,10 @@ verifier.verify(signed)  # True
 !!! note "Raw bytes are read as HMAC keys"
     A raw `bytes` value (or `(bytes, id)` tuple) is always wrapped as an
     [`HMACKey`][pysigned.HMACKey]. Ed25519 keys must be wrapped explicitly as
-    [`Ed25519PrivateKey`][pysigned.Ed25519PrivateKey] or
+    [`Ed25519KeyPair`][pysigned.Ed25519KeyPair] or
     [`Ed25519PublicKey`][pysigned.Ed25519PublicKey], because raw bytes are
-    ambiguous — both between HMAC and Ed25519, and between an Ed25519 private
-    seed and public key.
+    ambiguous — both between HMAC and Ed25519, and between a private seed and a
+    public key.
 
 ## Mixing algorithms
 
@@ -79,11 +79,11 @@ another without a flag-day cutover — keep verifying old HMAC signatures while
 signing new ones with Ed25519.
 
 ```python
-from pysigned import Ed25519PrivateKey, KeySet, URLAuth
+from pysigned import Ed25519KeyPair, KeySet, URLAuth
 
 keys = KeySet([
     (secrets.token_bytes(64), "legacy-hmac"),  # still trusted for verify
-    Ed25519PrivateKey.generate("ed-2025"),     # new signatures use this
+    Ed25519KeyPair.generate("ed-2025"),        # new signatures use this
 ])
 signer = URLAuth(keys, signing_key_id="ed-2025")
 ```

@@ -12,7 +12,7 @@ This page is generated from the source docstrings and type annotations.
 
 ::: pysigned.HMACKey
 
-::: pysigned.Ed25519PrivateKey
+::: pysigned.Ed25519KeyPair
 
 ::: pysigned.Ed25519PublicKey
 

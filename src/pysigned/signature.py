@@ -26,7 +26,7 @@ class URLAuth:
     Args:
         keys: A :class:`~pysigned.backends.KeySet`, or raw values that are
             wrapped in one. Raw bytes are read as HMAC keys; pass wrapped
-            :class:`~pysigned.keys.Ed25519PrivateKey` /
+            :class:`~pysigned.keys.Ed25519KeyPair` /
             :class:`~pysigned.keys.Ed25519PublicKey` for Ed25519.
         signing_key_id: Id of the key to sign with. Defaults to the most
             recently added key (which must be able to sign).

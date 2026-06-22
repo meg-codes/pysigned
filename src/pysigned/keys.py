@@ -2,20 +2,32 @@ import hashlib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import TYPE_CHECKING, Self
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from cryptography.exceptions import InvalidSignature  # noqa: F401  (re-exported for backends)
-from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
-
+if TYPE_CHECKING:
+    from .backends import Backend
 
 DIGEST = "sha512"
 # HMAC keys must be at least the digest's output size (NIST SP 800-107).
 MIN_KEY_BYTES = hashlib.new(DIGEST).digest_size
-# Ed25519 seeds and public keys are both fixed at 32 bytes (RFC 8032).
-ED25519_KEY_BYTES = 32
+
+
+class KeyLike:
+    id: str = ""
+
+    def _id_bytes(self) -> bytes:
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__} id={self.id}, bytes={self._id_bytes().hex()[:5]}...>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 @dataclass(frozen=True, eq=False, repr=False)
-class Key:
+class Key(KeyLike):
     """A signing/verifying key: raw bytes plus a stable id.
 
     Subclasses supply two hooks: ``_validate`` (raise on bad key material) and
@@ -31,7 +43,7 @@ class Key:
     key: bytes
     id: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._validate()
         # Own an immutable copy so a mutable bytearray argument can't change
         # underneath the frozen instance.
@@ -40,9 +52,6 @@ class Key:
             object.__setattr__(self, "id", hashlib.sha512(self._id_bytes()).hexdigest())
 
     def _validate(self) -> None:
-        raise NotImplementedError
-
-    def _id_bytes(self) -> bytes:
         raise NotImplementedError
 
     def __hash__(self):
@@ -55,9 +64,6 @@ class Key:
 
     def __bytes__(self):
         return self.key
-
-    def __repr__(self):
-        return f"<{type(self).__name__} id={self.id}, bytes={self._id_bytes().hex()[:5]}...>"
 
 
 class HMACKey(Key):
@@ -74,65 +80,54 @@ class HMACKey(Key):
         return self.key
 
 
-class Ed25519PrivateKey(Key):
-    """An Ed25519 private key. ``key`` holds the 32-byte raw seed.
+class Ed25519PublicKey(Key):
+    public_key: ed25519.Ed25519PublicKey
 
-    Can both sign and verify. Its ``id`` is fingerprinted from the derived public
+    def _validate(self) -> None:
+        object.__setattr__(
+            self, "public_key", ed25519.Ed25519PublicKey.from_public_bytes(self.key)
+        )
+
+    def _id_bytes(self) -> bytes:
+        return self.key
+
+
+class Ed25519KeyPair(KeyLike):
+    """An Ed25519 keypair, wrapping a private key and its public key.
+
+    Can both sign and verify. Its ``id`` is fingerprinted from the public
     key, so it matches the id of the corresponding :class:`Ed25519PublicKey`, and
     neither the id nor the repr ever expose the seed.
     """
 
-    @classmethod
-    def generate(cls, id: str = "") -> "Ed25519PrivateKey":
-        raw = _ed25519.Ed25519PrivateKey.generate().private_bytes_raw()
-        return cls(raw, id)
+    def __init__(
+        self,
+        private_key: ed25519.Ed25519PrivateKey,
+        public_key: ed25519.Ed25519PublicKey | None = None,
+        id: str = "",
+    ):
+        self.private_key = private_key
+        self.public_key = public_key or self.private_key.public_key()
+        self.id = id or hashlib.sha512(self._id_bytes()).hexdigest()
 
     @classmethod
-    def from_private_bytes(cls, seed: bytes, id: str = "") -> "Ed25519PrivateKey":
-        return cls(seed, id)
+    def generate(cls, id: str = "") -> Self:
+        priv_key = ed25519.Ed25519PrivateKey.generate()
+        pub_key = priv_key.public_key()
+        return cls(priv_key, pub_key, id)
 
-    def _validate(self) -> None:
-        if len(self.key) != ED25519_KEY_BYTES:
-            raise ValueError(
-                f"Ed25519 private seed must be {ED25519_KEY_BYTES} bytes, "
-                f"got {len(self.key)}"
-            )
+    @classmethod
+    def from_private_bytes(cls, seed: bytes, id: str = "") -> Self:
+        priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+        pub_key = priv_key.public_key()
+        return cls(priv_key, pub_key, id)
 
-    def _crypto_key(self) -> _ed25519.Ed25519PrivateKey:
-        return _ed25519.Ed25519PrivateKey.from_private_bytes(self.key)
-
-    def public_bytes(self) -> bytes:
-        return self._crypto_key().public_key().public_bytes_raw()
-
-    def public_key(self) -> "Ed25519PublicKey":
-        """The verify-side key, sharing this key's id."""
-        return Ed25519PublicKey(self.public_bytes(), self.id)
+    def public(self) -> "Ed25519PublicKey":
+        """The verify-only public key for this pair, sharing its id."""
+        return Ed25519PublicKey(self.public_key.public_bytes_raw(), self.id)
 
     def _id_bytes(self) -> bytes:
-        return self.public_bytes()
-
-
-class Ed25519PublicKey(Key):
-    """An Ed25519 public key. ``key`` holds the 32-byte raw public key. Verify only."""
-
-    @classmethod
-    def from_public_bytes(cls, public: bytes, id: str = "") -> "Ed25519PublicKey":
-        return cls(public, id)
-
-    def _validate(self) -> None:
-        if len(self.key) != ED25519_KEY_BYTES:
-            raise ValueError(
-                f"Ed25519 public key must be {ED25519_KEY_BYTES} bytes, "
-                f"got {len(self.key)}"
-            )
-        # Reject points that aren't valid public keys.
-        _ed25519.Ed25519PublicKey.from_public_bytes(self.key)
-
-    def _crypto_key(self) -> _ed25519.Ed25519PublicKey:
-        return _ed25519.Ed25519PublicKey.from_public_bytes(self.key)
-
-    def _id_bytes(self) -> bytes:
-        return self.key
+        return self.public_key.public_bytes_raw()
 
 
 class KeySet:
@@ -142,7 +137,7 @@ class KeySet:
     key dispatches on its type via the backend.
     """
 
-    def __init__(self, keys: Iterable, backend=None):
+    def __init__(self, keys: Iterable, backend: "Backend | None" = None):
         if backend is None:
             # Deferred to break the keys <-> backends import cycle: backends
             # imports the key types from this module, so Backend can't be
