@@ -37,7 +37,7 @@ class Backend:
     def __init__(self, digest: str = DIGEST):
         self.digest = digest
 
-    def parse_key(self, value: KeyValue) -> KeyLike:
+    def parse_key(self, value: KeyValue) -> Key | Ed25519KeyPair:
         """Wrap a user-supplied key value as a :class:`~pysigned.keys.KeyLike`.
 
         Already-wrapped keys pass through; raw ``bytes`` or a ``(bytes, id)``
