@@ -939,11 +939,10 @@ wheels = [
 
 [[package]]
 name = "pysigned"
-version = "0.2.6"
+version = "0.2.7"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
-    { name = "httpx2" },
 ]
 
 [package.optional-dependencies]
@@ -953,6 +952,7 @@ fastapi = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx2" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "pip-licenses" },
@@ -967,12 +967,12 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=40" },
     { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.111" },
-    { name = "httpx2", specifier = ">=2.4.0" },
 ]
 provides-extras = ["fastapi"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx2", specifier = ">=2.4.0" },
     { name = "mkdocs-material", specifier = ">=9.5.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
     { name = "pip-licenses", specifier = ">=5.5.5" },
