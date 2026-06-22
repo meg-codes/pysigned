@@ -52,7 +52,6 @@ jobs:
             publish:
               - 'src/**'
               - 'pyproject.toml'
-              - 'uv.lock'
               - 'LICENSE'
               - 'THIRD-PARTY-LICENSES'
 

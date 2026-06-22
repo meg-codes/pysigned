@@ -164,6 +164,64 @@ def test_signed_route_keyset_getter_receives_request():
     assert seen_paths == ["/a"]
 
 
+def test_signed_route_accepts_url_auth_instance():
+    keys = keyset()
+    auth = URLAuth(keys)
+    client = TestClient(make_app(url_auth=auth))
+
+    signed_url = auth.sign(str(client.base_url) + "/a?b=1")
+
+    response = client.get(signed_url)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_signed_route_url_auth_rejects_missing_signature():
+    client = TestClient(make_app(url_auth=URLAuth(keyset())))
+
+    response = client.get("/a?b=1")
+    assert response.status_code == 403
+
+
+def test_signed_route_url_auth_honours_custom_error_status():
+    client = TestClient(make_app(url_auth=URLAuth(keyset()), error_status=401))
+
+    response = client.get("/a?b=1")
+    assert response.status_code == 401
+
+
+def test_signed_route_url_auth_uses_instance_config():
+    """An ignore_query_params baked into the url_auth instance is respected."""
+    keys = keyset()
+    auth = URLAuth(keys, ignore_query_params=["tracking"])
+    client = TestClient(make_app(url_auth=auth))
+
+    signed_url = auth.sign(str(client.base_url) + "/a?b=1")
+    response = client.get(signed_url + "&tracking=xyz")
+    assert response.status_code == 200
+
+
+def test_signed_route_require_kid_accepts_matching_kid():
+    keys = keyset()
+    client = TestClient(make_app(keyset=keys, require_kid=True))
+
+    signed_url = URLAuth(keys, require_kid=True).sign(str(client.base_url) + "/a?b=1")
+
+    response = client.get(signed_url)
+    assert response.status_code == 200
+
+
+def test_signed_route_require_kid_rejects_url_without_kid():
+    keys = keyset()
+    client = TestClient(make_app(keyset=keys, require_kid=True))
+
+    # Signed without require_kid, so the URL carries no kid.
+    signed_url = URLAuth(keys).sign(str(client.base_url) + "/a?b=1")
+
+    response = client.get(signed_url)
+    assert response.status_code == 403
+
+
 def test_signed_route_rejects_no_keyset_args():
     with pytest.raises(ValueError):
         SignedRoute()
@@ -177,6 +235,27 @@ def test_signed_route_rejects_both_keyset_args():
 
     with pytest.raises(ValueError):
         SignedRoute(keyset=keys, keyset_getter=keyset_getter)
+
+
+def test_signed_route_rejects_url_auth_with_keyset():
+    keys = keyset()
+    with pytest.raises(ValueError):
+        SignedRoute(url_auth=URLAuth(keys), keyset=keys)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"signing_key_id": "k"},
+        {"ignore_query_params": ["tracking"]},
+        {"ttl": 30},
+        {"require_kid": True},
+    ],
+    ids=["signing_key_id", "ignore_query_params", "ttl", "require_kid"],
+)
+def test_signed_route_rejects_url_auth_with_forwarded_args(extra):
+    with pytest.raises(ValueError):
+        SignedRoute(url_auth=URLAuth(keyset()), **extra)
 
 
 def test_signed_route_keyset_getter_returning_none_raises():
