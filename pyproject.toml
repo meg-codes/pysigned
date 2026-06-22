@@ -1,12 +1,12 @@
 [project]
 name = "pysigned"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Sign and verify URLs with an expiry, using HMAC or Ed25519"
 readme = "README.md"
 authors = [
     { name = "Meg Hicks", email = "meg.d.hicks@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE", "THIRD-PARTY-LICENSES"]
 classifiers = [
@@ -24,7 +24,7 @@ dependencies = []
 [project.optional-dependencies]
 # Ed25519 signing/verifying. The HMAC backend needs nothing beyond the stdlib.
 ed25519 = [
-    "cryptography>=49.0.0",
+    "cryptography>=40",
 ]
 
 [build-system]
