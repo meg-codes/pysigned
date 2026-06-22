@@ -6,10 +6,15 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Self, cast, Iterator
+from urllib.request import Request, urlopen
+
+
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 if TYPE_CHECKING:
     from .backends import Backend, KeyValue
+
+from pysigned import __version__
 
 DIGEST = "sha512"
 # HMAC keys must be at least the digest's output size (NIST SP 800-107).
@@ -235,3 +240,20 @@ class KeySet:
             raise ValueError(f"{environment_key} unset, cannot import keyset.")
         jwks = json.loads(val)
         return cls.from_jwks(jwks, backend)
+
+    @classmethod
+    def from_url(cls, url: str, backend: "Backend | None" = None) -> Self:
+        """Build a KeySet by fetching a JWKS document over HTTP(S).
+
+        The body at ``url`` must be a JSON JWKS (a ``{"keys": [...]}`` mapping),
+        as produced by :meth:`from_jwks`.
+        """
+        headers = {
+            "User-Agent": f"Pysigned/{__version__}",
+            "Accept": "application/json",
+        }
+        request = Request(url, headers=headers)
+        with urlopen(request) as response:
+            raw = response.read().decode("utf-8")
+            as_json = json.loads(raw)
+            return cls.from_jwks(as_json, backend)
