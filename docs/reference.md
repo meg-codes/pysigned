@@ -21,3 +21,9 @@ This page is generated from the source docstrings and type annotations.
 ## Backend
 
 ::: pysigned.Backend
+
+## FastAPI extension
+
+::: pysigned.extensions.fastapi.SignedRoute
+
+::: pysigned.extensions.fastapi.KeysetGetter
