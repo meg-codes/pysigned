@@ -13,6 +13,7 @@ from .keys import (
     Key,
 )
 
+
 K = TypeVar("K", bound=Key)
 
 
@@ -84,15 +85,15 @@ class Ed25519Backend(Backend[Key]):
         return key._crypto_key().sign(message).hex()
 
     def verify(self, key: Key, message: bytes, signature: str) -> bool:
-
-        from cryptography.exceptions import InvalidSignature
-
         if isinstance(key, Ed25519PrivateKey):
             public = key._crypto_key().public_key()
         elif isinstance(key, Ed25519PublicKey):
             public = key._crypto_key()
         else:
             return False
+
+        from cryptography.exceptions import InvalidSignature
+
         try:
             public.verify(bytes.fromhex(signature), message)
         except (InvalidSignature, ValueError):
