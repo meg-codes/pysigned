@@ -26,18 +26,6 @@ uv add pysigned
 pip install pysigned
 ```
 
-The HMAC backend uses only the standard library. The Ed25519 backend depends on
-[`cryptography`](https://pypi.org/project/cryptography/), which is an optional
-extra — install it when you need asymmetric signing:
-
-```sh
-uv add 'pysigned[ed25519]'
-```
-
-```sh
-pip install 'pysigned[ed25519]'
-```
-
 ## Usage
 
 ### HMAC (symmetric)
@@ -126,7 +114,7 @@ signer.verify(signed, skew=30)  # accept up to 30s past exp
 A runnable demo of both backends lives in [examples/sign_urls.py](examples/sign_urls.py):
 
 ```sh
-uv run python examples/sign_urls.py # requires ed25519 support
+uv run python examples/sign_urls.py
 ```
 
 ## How it works

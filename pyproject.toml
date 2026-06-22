@@ -22,11 +22,7 @@ classifiers = [
     "Topic :: Security :: Cryptography",
     "Typing :: Typed",
 ]
-dependencies = []
-
-[project.optional-dependencies]
-# Ed25519 signing/verifying. The HMAC backend needs nothing beyond the stdlib.
-ed25519 = [
+dependencies = [
     "cryptography>=40",
 ]
 
@@ -36,7 +32,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "pysigned[ed25519]",
     "pip-licenses>=5.5.5",
     "pytest>=9.1.0",
     "pytest-cov>=7.1.0",

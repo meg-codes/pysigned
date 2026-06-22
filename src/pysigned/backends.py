@@ -10,9 +10,9 @@ from .keys import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
     HMACKey,
+    InvalidSignature,
     Key,
 )
-
 
 K = TypeVar("K", bound=Key)
 
@@ -91,9 +91,6 @@ class Ed25519Backend(Backend[Key]):
             public = key._crypto_key()
         else:
             return False
-
-        from cryptography.exceptions import InvalidSignature
-
         try:
             public.verify(bytes.fromhex(signature), message)
         except (InvalidSignature, ValueError):

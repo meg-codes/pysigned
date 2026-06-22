@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from pysigned import (
+    Ed25519Backend,
     Ed25519KeySet,
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -142,8 +143,6 @@ def test_private_and_matching_public_collapse_by_id():
 
 
 def test_signer_uses_ed25519_backend_from_keyset():
-    from pysigned import Ed25519Backend
-
     signer = URLAuth(Ed25519KeySet([SK]))
     assert isinstance(signer.backend, Ed25519Backend)
 

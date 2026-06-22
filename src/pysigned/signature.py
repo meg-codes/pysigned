@@ -8,39 +8,9 @@ from urllib.parse import (
 )
 
 from .backends import (
-    Backend,
-    Ed25519Backend,
-    Ed25519KeySet,
-    HMACBackend,
     HMACKeySet,
     KeySet,
 )
-from .keys import (
-    DIGEST,
-    MIN_KEY_BYTES,
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-    HMACKey,
-    Key,
-)
-
-# Re-exported for backwards compatibility; importers historically reach for
-# these via ``pysigned.signature``.
-__all__ = [
-    "DIGEST",
-    "MIN_KEY_BYTES",
-    "Backend",
-    "Ed25519Backend",
-    "Ed25519KeySet",
-    "Ed25519PrivateKey",
-    "Ed25519PublicKey",
-    "HMACBackend",
-    "HMACKey",
-    "HMACKeySet",
-    "Key",
-    "KeySet",
-    "URLAuth",
-]
 
 
 class URLAuth:
