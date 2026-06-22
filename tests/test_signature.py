@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from pysigned.signature import MIN_KEY_BYTES, HMACKey, HMACKeySet, Signer
+from pysigned.signature import MIN_KEY_BYTES, HMACKey, HMACKeySet, URLAuth
 
 
 def kb(seed: bytes) -> bytes:
@@ -186,27 +186,27 @@ def test_duplicate_ids_collapse_to_last():
 
 
 # ---------------------------------------------------------------------------
-# Signer construction
+# URLAuth construction
 # ---------------------------------------------------------------------------
 
 
 def test_accepts_raw_values():
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     assert isinstance(signer.keys, HMACKeySet)
 
 
 def test_accepts_prebuilt_keyset_without_rewrapping():
     ks = HMACKeySet([KEY])
-    assert Signer(ks).keys is ks
+    assert URLAuth(ks).keys is ks
 
 
 def test_signing_key_defaults_to_most_recently_added():
-    signer = Signer([(KEY_A, "old"), (KEY_B, "new")])
+    signer = URLAuth([(KEY_A, "old"), (KEY_B, "new")])
     assert signer.signing_key_id == "new"
 
 
 def test_explicit_signing_key_id_is_respected():
-    signer = Signer([(KEY_A, "old"), (KEY_B, "new")], signing_key_id="old")
+    signer = URLAuth([(KEY_A, "old"), (KEY_B, "new")], signing_key_id="old")
     assert signer.signing_key_id == "old"
 
 
@@ -216,7 +216,7 @@ def test_explicit_signing_key_id_is_respected():
 
 
 def test_sign_appends_sig_and_exp():
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     signed = signer.sign("https://example.com/a?b=1")
     query = parse_qs(urlparse(signed).query)
     assert "sig" in query and "exp" in query
@@ -224,20 +224,20 @@ def test_sign_appends_sig_and_exp():
 
 
 def test_sign_then_verify_succeeds():
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     assert signer.verify(signer.sign("https://example.com/a?b=1")) is True
 
 
 def test_round_trips_query_that_does_not_re_encode_identically():
     # Spaces and repeated keys don't survive a raw round trip; sign() and
     # verify() must canonicalise the query the same way.
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     signed = signer.sign("https://example.com/p?q=hello world&a=1&a=2")
     assert signer.verify(signed) is True
 
 
 def test_sign_uses_configured_ttl():
-    signer = Signer([KEY], ttl=100)
+    signer = URLAuth([KEY], ttl=100)
     signed = signer.sign("https://example.com/")
     exp = int(parse_qs(urlparse(signed).query)["exp"][0])
     assert abs(exp - (int(time()) + 100)) <= 2
@@ -252,21 +252,21 @@ def test_sign_uses_configured_ttl():
     ],
 )
 def test_verify_rejects_tampered_url(tamper):
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     signed = signer.sign("https://example.com/a?b=1")
     assert signer.verify(tamper(signed)) is False
 
 
 def test_verify_rejects_signature_from_unknown_key():
-    signed = Signer([KEY_A]).sign("https://example.com/")
-    assert Signer([KEY_B]).verify(signed) is False
+    signed = URLAuth([KEY_A]).sign("https://example.com/")
+    assert URLAuth([KEY_B]).verify(signed) is False
 
 
 def test_verify_accepts_rotated_out_key():
     """A signature made with an old key still verifies after rotation."""
-    old = Signer([(KEY_A, "old")])
+    old = URLAuth([(KEY_A, "old")])
     signed = old.sign("https://example.com/")
-    rotated = Signer([(KEY_A, "old"), (KEY_B, "new")])
+    rotated = URLAuth([(KEY_A, "old"), (KEY_B, "new")])
     assert rotated.verify(signed) is True
     assert rotated.signing_key_id == "new"  # but new signatures use the new key
 
@@ -281,17 +281,17 @@ def test_verify_accepts_rotated_out_key():
     ],
 )
 def test_verify_rejects_missing_or_malformed_params(query):
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     assert signer.verify(f"https://example.com/?{query}") is False
 
 
 def test_verify_rejects_expired_signature():
-    signer = Signer([KEY], ttl=-100)  # already expired on creation
+    signer = URLAuth([KEY], ttl=-100)  # already expired on creation
     assert signer.verify(signer.sign("https://example.com/")) is False
 
 
 def test_skew_allows_recently_expired_signature():
-    signer = Signer([KEY], ttl=-100)
+    signer = URLAuth([KEY], ttl=-100)
     signed = signer.sign("https://example.com/")
     assert signer.verify(signed, skew=0) is False
     assert signer.verify(signed, skew=200) is True
@@ -304,37 +304,37 @@ def test_skew_allows_recently_expired_signature():
 
 def test_signed_url_still_contains_ignored_param():
     # Ignored params are excluded from the signature, not stripped from the URL.
-    signer = Signer([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([KEY], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert parse_qs(urlparse(signed).query)["utm"] == ["x"]
 
 
 def test_changing_ignored_param_value_still_verifies():
-    signer = Signer([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([KEY], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=before")
     assert signer.verify(signed.replace("utm=before", "utm=after")) is True
 
 
 def test_adding_ignored_param_still_verifies():
-    signer = Signer([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([KEY], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1")
     assert signer.verify(signed + "&utm=added") is True
 
 
 def test_removing_ignored_param_still_verifies():
-    signer = Signer([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([KEY], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?utm=x&a=1")
     assert signer.verify(signed.replace("utm=x&", "")) is True
 
 
 def test_non_ignored_param_is_still_protected():
-    signer = Signer([KEY], ignore_query_params=["utm"])
+    signer = URLAuth([KEY], ignore_query_params=["utm"])
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert signer.verify(signed.replace("a=1", "a=2")) is False
 
 
 def test_multiple_ignored_params():
-    signer = Signer([KEY], ignore_query_params=["utm_source", "utm_medium"])
+    signer = URLAuth([KEY], ignore_query_params=["utm_source", "utm_medium"])
     signed = signer.sign("https://example.com/p?a=1&utm_source=s&utm_medium=m")
     tampered = signed.replace("utm_source=s", "utm_source=x").replace(
         "utm_medium=m", "utm_medium=y"
@@ -345,14 +345,14 @@ def test_multiple_ignored_params():
 def test_ignore_list_accepts_any_iterable():
     # A set is a valid Iterable[str]; order-independence is fine since the
     # list is only used for membership tests.
-    signer = Signer([KEY], ignore_query_params={"utm"})
+    signer = URLAuth([KEY], ignore_query_params={"utm"})
     signed = signer.sign("https://example.com/p?a=1&utm=x")
     assert signer.verify(signed.replace("utm=x", "utm=y")) is True
 
 
 def test_default_signs_every_param():
     # Without an ignore list, any query param is protected.
-    signer = Signer([KEY])
+    signer = URLAuth([KEY])
     signed = signer.sign("https://example.com/p?utm=x")
     assert signer.verify(signed.replace("utm=x", "utm=y")) is False
 
@@ -360,7 +360,7 @@ def test_default_signs_every_param():
 def test_one_shot_iterable_ignore_list_is_not_exhausted():
     # A generator must survive being used across both sign() and verify(),
     # and across repeated calls.
-    signer = Signer([KEY], ignore_query_params=(p for p in ["utm"]))
+    signer = URLAuth([KEY], ignore_query_params=(p for p in ["utm"]))
     signed = signer.sign("https://example.com/p?a=1&utm=x")  # sign uses it
     assert signer.verify(signed.replace("utm=x", "utm=y")) is True  # verify too
     assert signer.verify(signed.replace("utm=x", "utm=z")) is True  # still works

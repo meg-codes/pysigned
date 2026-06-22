@@ -12,7 +12,7 @@ from .keys import (
     HMACKey,
     Key,
 )
-from .signature import Signer
+from .signature import URLAuth
 
 __all__ = [
     "Backend",
@@ -25,5 +25,5 @@ __all__ = [
     "HMACKeySet",
     "Key",
     "KeySet",
-    "Signer",
+    "URLAuth",
 ]
