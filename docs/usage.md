@@ -42,6 +42,27 @@ signer = URLAuth(keys, ttl=60)
 signer = URLAuth(keys, signing_key_id="k-2024")
 ```
 
+Key ids must be unique within a `KeySet`; a duplicate raises `ValueError`.
+
+## Naming the key with `kid`
+
+By default `verify` tries every key in the set. Pass `require_kid=True` to tag
+each signed URL with a `kid` param naming the signing key; verification then
+consults *only* that key and rejects URLs with a missing or unknown `kid`:
+
+```python
+signer = URLAuth(keys, require_kid=True)
+signed = signer.sign("https://example.com/report?id=42")
+# https://example.com/report?id=42&sig=...&exp=...&kid=k-2025
+
+signer.verify(signed)  # True
+```
+
+Signer and verifier must agree on the flag: a `require_kid` verifier rejects
+URLs signed without a `kid`. Without the flag, any `kid` in the URL is ignored.
+The `kid` itself isn't part of the signed message — it only selects which key
+to check.
+
 ## Ed25519 (asymmetric)
 
 A keypair signs; a public key only verifies. Use this when you sign in one
@@ -79,6 +100,7 @@ another without a flag-day cutover — keep verifying old HMAC signatures while
 signing new ones with Ed25519.
 
 ```python
+import secrets
 from pysigned import Ed25519KeyPair, KeySet, URLAuth
 
 keys = KeySet([
@@ -137,6 +159,27 @@ environment variable for [`KeySet.from_env`][pysigned.KeySet.from_env]:
 pysigned-gen-key --ed25519 --jwks --compact
 ```
 
+## Loading keys
+
+Besides [`KeySet.from_jwks`][pysigned.KeySet.from_jwks], a JWKS can be loaded
+from an environment variable or fetched over HTTP(S):
+
+```sh
+export APP_SIGNING_KEYS="$(pysigned-gen-key --ed25519 --jwks --compact)"
+```
+
+```python
+from pysigned import KeySet
+
+keys = KeySet.from_env("APP_SIGNING_KEYS")  # ValueError if unset or empty
+keys = KeySet.from_url("https://example.com/.well-known/jwks.json")
+```
+
+A JWK with a private component (`d`) loads as an
+[`Ed25519KeyPair`][pysigned.Ed25519KeyPair]; one without loads as a verify-only
+[`Ed25519PublicKey`][pysigned.Ed25519PublicKey], which is what you'd publish at
+a URL. HMAC keys load from `"kty": "oct"`, `"alg": "HS512"` JWKs.
+
 ## FastAPI integration
 
 Requires the `fastapi` extra (see [Installation](installation.md#fastapi-extension)).
@@ -171,9 +214,23 @@ async def keys_for_request(request) -> KeySet:
 verify_signature = SignedRoute(keyset_getter=keys_for_request)
 ```
 
-`signing_key_id`, `ignore_query_params`, and `ttl` are forwarded to the
-underlying [`URLAuth`][pysigned.URLAuth]. `error_status` overrides the status
-code raised on a failed verification (default: 403).
+`signing_key_id`, `ignore_query_params`, `ttl`, and `require_kid` are forwarded
+to the underlying [`URLAuth`][pysigned.URLAuth]. `error_status` overrides the
+status code raised on a failed verification (default: 403).
+
+Alternatively, pass an already-configured `URLAuth` as `url_auth` and the
+dependency verifies against it directly:
+
+```python
+from pysigned import URLAuth
+
+verify_signature = SignedRoute(url_auth=URLAuth(keys, require_kid=True))
+```
+
+`url_auth`, `keyset`, and `keyset_getter` are mutually exclusive, and since a
+`URLAuth` carries its own settings, `signing_key_id`, `ignore_query_params`,
+`ttl`, and `require_kid` can't be passed alongside `url_auth` — doing so raises
+`ValueError`.
 
 ## Runnable example
 

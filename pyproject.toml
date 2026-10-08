@@ -1,6 +1,6 @@
 [project]
 name = "pysigned"
-version = "0.2.8"
+version = "0.2.9"
 description = "Sign and verify URLs with an expiry, using HMAC or Ed25519"
 readme = "README.md"
 authors = [
@@ -47,11 +47,16 @@ dev = [
     "pytest-cov>=7.1.0",
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.27.0",
-    "ruff>=0.15.17",
-    "ty>=0.0.49",
+    "ruff>=0.16.10",
+    "ty>=0.0.85",
     "httpx2>=2.4.0",
 ]
 
+
+[tool.ruff.format]
+# ruff 0.16 formats Python code blocks in Markdown by default; docs examples
+# are hand-aligned (e.g. trailing comments), so keep the formatter on .py only.
+exclude = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

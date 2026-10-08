@@ -588,7 +588,7 @@ def jwks_server():
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *args):
+        def log_message(self, format: str, *args: object) -> None:
             pass  # keep pytest output clean
 
     class _Server(HTTPServer):
@@ -603,8 +603,7 @@ def jwks_server():
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     try:
-        host, port = server.server_address
-        yield f"http://{host}:{port}", captured
+        yield f"http://127.0.0.1:{server.server_port}", captured
     finally:
         server.shutdown()
         thread.join()

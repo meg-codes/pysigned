@@ -14,7 +14,7 @@ from pysigned.keys import (
     Key,
 )
 
-KEY = (b"k" * MIN_KEY_BYTES)
+KEY = b"k" * MIN_KEY_BYTES
 PAIR = Ed25519KeyPair.from_private_bytes(b"s" * 32)
 
 

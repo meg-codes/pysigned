@@ -70,6 +70,18 @@ signer = URLAuth(keys, ttl=60)
 signer = URLAuth(keys, signing_key_id="k-2024")
 ```
 
+### Naming the key with `kid`
+
+Pass `require_kid=True` to tag each signed URL with a `kid` naming the signing
+key. Verification then checks *only* that key, rejecting URLs with a missing or
+unknown `kid`. Signer and verifier must agree on the flag.
+
+```python
+signer = URLAuth(keys, require_kid=True)
+signed = signer.sign("https://example.com/report?id=42")
+# https://example.com/report?id=42&sig=...&exp=...&kid=k-2025
+```
+
 ### Ed25519 (asymmetric)
 
 A keypair signs; a public key only verifies. Use this when you sign in one
@@ -98,6 +110,7 @@ them, so an audience can migrate from one algorithm to another without a flag-da
 cutover — keep verifying old HMAC signatures while signing new ones with Ed25519.
 
 ```python
+import secrets
 from pysigned import Ed25519KeyPair, KeySet, URLAuth
 
 keys = KeySet([
@@ -152,6 +165,12 @@ signer = URLAuth(keys, ttl=60)
 ```
 
 It raises `ValueError` if the variable is unset or empty.
+`KeySet.from_url` fetches a JWKS over HTTP(S) instead, e.g. a public key set
+published by the signer:
+
+```python
+keys = KeySet.from_url("https://example.com/.well-known/jwks.json")
+```
 
 ## Examples
 
@@ -198,15 +217,24 @@ async def keys_for_request(request) -> KeySet:
 verify_signature = SignedRoute(keyset_getter=keys_for_request)
 ```
 
-`signing_key_id`, `ignore_query_params`, and `ttl` are forwarded to the
-underlying `URLAuth`; `error_status` overrides the status code raised on a
-failed verification (default: 403).
+`signing_key_id`, `ignore_query_params`, `ttl`, and `require_kid` are forwarded
+to the underlying `URLAuth`; `error_status` overrides the status code raised on
+a failed verification (default: 403). Alternatively, pass a fully configured
+`URLAuth` as `url_auth` (mutually exclusive with `keyset`/`keyset_getter` and
+with those tuning arguments):
+
+```python
+from pysigned import URLAuth
+
+verify_signature = SignedRoute(url_auth=URLAuth(keys, require_kid=True))
+```
 
 ## How it works
 
 `URLAuth.sign` builds a canonical byte string from the URL's scheme, host, path,
-and query (with `sig`/`exp` and any ignored params removed), appends the expiry,
+and query (with `sig`/`exp`/`kid` and any ignored params removed), appends the expiry,
 and signs it with the configured backend. Components are joined with newlines —
 a byte that can't appear in a URL component — so field boundaries can never be
 confused. `verify` rebuilds the same message and checks the signature against
-every configured key in constant time.
+every configured key (or only the `kid`-named key with `require_kid=True`);
+HMAC comparisons are constant-time.

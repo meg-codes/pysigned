@@ -5,8 +5,8 @@
 [`URLAuth.sign`][pysigned.URLAuth.sign] builds a canonical byte string from the
 URL and the expiry, then signs it with the configured backend:
 
-1. The query is parsed and the `sig`/`exp` params — plus anything passed to
-   `ignore_query_params` — are dropped, then re-encoded. This canonicalisation
+1. The query is parsed and the `sig`/`exp`/`kid` params — plus anything passed
+   to `ignore_query_params` — are dropped, then sorted and re-encoded. This canonicalisation
    means signing and verification agree regardless of incoming encoding or the
    ordering of unrelated parameters.
 2. The expiry, scheme, netloc, path, params, and canonical query are joined with
@@ -16,13 +16,17 @@ URL and the expiry, then signs it with the configured backend:
 
 [`URLAuth.verify`][pysigned.URLAuth.verify] rebuilds the same message and checks
 the signature against **every** configured key, so a signature made with a
-rotated-out key still verifies until it expires. HMAC comparisons are
-constant-time to avoid timing attacks.
+rotated-out key still verifies until it expires. With `require_kid=True`, `sign`
+also appends a `kid` naming the signing key, and `verify` checks only that key —
+rejecting URLs whose `kid` is missing or unknown. The `kid` isn't signed; it only
+selects the key, and a forged one simply selects a key that won't verify. HMAC
+comparisons are constant-time to avoid timing attacks.
 
 ## Keys and ids
 
-Every key carries a stable `id`. If you don't supply one, it's a SHA-512
-fingerprint:
+Every key carries a stable `id`, which must be unique within a
+[`KeySet`][pysigned.KeySet]. If you don't supply one, it's a short fingerprint:
+the first 12 characters of the URL-safe base64 SHA-512 digest of the key bytes.
 
 - An [`HMACKey`][pysigned.HMACKey] fingerprints the secret itself (safe because
   SHA-512 is one-way, and `repr` truncates).

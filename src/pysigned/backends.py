@@ -52,9 +52,9 @@ class Backend:
                 return HMACKey(value)
             case (_bytes, _id):
                 if not isinstance(_bytes, bytes):
-                    raise ValueError("Keys in tuples must be bytes")
+                    raise ValueError("Keys in tuples must be bytes")  # noqa: TRY004 -- ValueError is the documented contract for invalid key input
                 if not isinstance(_id, str):
-                    raise ValueError("Key ids must be strings.")
+                    raise ValueError("Key ids must be strings.")  # noqa: TRY004 -- ValueError is the documented contract for invalid key input
                 return HMACKey(_bytes, _id)
             case _:
                 raise ValueError(f"Invalid key value: {value}")

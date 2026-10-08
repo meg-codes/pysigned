@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 
 def jwk_hmac() -> dict:
-    """Generate a random HMAC key, returned as a JWK JSON string."""
+    """Generate a random 64-byte HMAC (HS512) key, returned as a JWK dict."""
     key = secrets.token_bytes(64)
     kid = urlsafe_b64encode(hashlib.sha512(key).digest()).decode()[0:12]
     k = urlsafe_b64encode(key).decode().rstrip("=")
@@ -16,7 +16,7 @@ def jwk_hmac() -> dict:
 
 
 def jwk_ed25519() -> dict:
-    """Generate a random Ed25519 keypair, returned as a JWK JSON string."""
+    """Generate a random Ed25519 keypair, returned as a JWK dict."""
     private = ed25519.Ed25519PrivateKey.generate()
     public = private.public_key()
     kid = urlsafe_b64encode(

@@ -1,4 +1,4 @@
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("pysigned")
@@ -7,14 +7,12 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 from .backends import Backend
-
 from .keys import (
     Ed25519KeyPair,
     Ed25519PublicKey,
     HMACKey,
     KeySet,
 )
-
 from .signature import URLAuth
 
 __all__ = [

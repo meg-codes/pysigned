@@ -1,13 +1,12 @@
-import os
-import json
 import hashlib
+import json
+import os
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Self, cast, Iterator
+from typing import TYPE_CHECKING, Any, Self, cast
 from urllib.request import Request, urlopen
-
 
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -44,7 +43,7 @@ class Key(KeyLike):
     ``_id_bytes`` is **not** "the public part" of the key. It is only what the
     fingerprint is computed over. A symmetric HMAC key has no public counterpart,
     so its ``_id_bytes`` is the *secret* key itself -- safe to hash into an id only
-    because SHA-256 is one-way, and safe to show in ``repr`` only because ``repr``
+    because SHA-512 is one-way, and safe to show in ``repr`` only because ``repr``
     truncates. An asymmetric Ed25519 key uses its genuinely public bytes.
     """
 
@@ -128,12 +127,12 @@ class Ed25519KeyPair(KeyLike):
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_key)
 
         self.private_key = private_key
-        if public_key:
-            if (
-                cast(ed25519.Ed25519PublicKey, public_key).public_bytes_raw()
-                != self.private_key.public_key().public_bytes_raw()
-            ):
-                raise ValueError("Mismatch private and public ed25519 keys")
+        if (
+            public_key
+            and cast(ed25519.Ed25519PublicKey, public_key).public_bytes_raw()
+            != self.private_key.public_key().public_bytes_raw()
+        ):
+            raise ValueError("Mismatch private and public ed25519 keys")
         self.public_key = (
             cast(ed25519.Ed25519PublicKey, public_key) or self.private_key.public_key()
         )
@@ -232,7 +231,7 @@ class KeySet:
             match key:
                 case {"kty": "OKP", "crv": "Ed25519", "x": public, "d": private}:
                     private_key = ed25519.Ed25519PrivateKey.from_private_bytes(
-                        (cls._unpadded_b64decode(private))
+                        cls._unpadded_b64decode(private)
                     )
                     public_key = ed25519.Ed25519PublicKey.from_public_bytes(
                         cls._unpadded_b64decode(public)

@@ -5,15 +5,14 @@ module is only imported by code that explicitly opts into it, so the core
 ``pysigned`` package stays installable without FastAPI.
 """
 
-import collections.abc
-
-from typing import Iterable, Protocol
+from collections.abc import Iterable
+from typing import Protocol
 
 from fastapi import Request, status
 from fastapi.exceptions import HTTPException
 
-from pysigned.keys import KeySet
 from pysigned import URLAuth
+from pysigned.keys import KeySet
 
 
 class KeysetGetter(Protocol):
@@ -73,7 +72,7 @@ class SignedRoute:
         self,
         *,
         url_auth: URLAuth | None = None,
-        keyset: KeySet | collections.abc.Iterable | None = None,
+        keyset: KeySet | Iterable | None = None,
         keyset_getter: KeysetGetter | None = None,
         signing_key_id: str = "",
         ignore_query_params: Iterable[str] | None = None,

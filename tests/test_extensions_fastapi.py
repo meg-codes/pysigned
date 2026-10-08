@@ -11,7 +11,7 @@ driven through ``TestClient``.
 import builtins
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from pysigned import HMACKey, KeySet, URLAuth
@@ -264,10 +264,19 @@ def test_signed_route_keyset_getter_returning_none_raises():
 
     route = SignedRoute(keyset_getter=keyset_getter)
 
-    class FakeRequest:
-        url = "http://testserver/a?b=1"
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "path": "/a",
+            "query_string": b"b=1",
+            "headers": [],
+        }
+    )
 
     import asyncio
 
     with pytest.raises(ValueError):
-        asyncio.run(route(FakeRequest()))
+        asyncio.run(route(request))

@@ -1,10 +1,10 @@
 from collections.abc import Iterable
 from time import time
 from urllib.parse import (
+    ParseResult,
     parse_qsl,
     urlencode,
     urlparse,
-    ParseResult,
 )
 
 from .keys import KeySet
@@ -17,14 +17,14 @@ class URLAuth:
     so that keys can be rotated without invalidating signatures that are still
     in flight: signing uses one key, but :meth:`verify` accepts any of them. The
     keys may mix algorithms -- an HMAC key and an Ed25519 key can live in the
-    same :class:`~pysigned.backends.KeySet`.
+    same :class:`~pysigned.keys.KeySet`.
 
     The cryptography is delegated to the keyset's :class:`~pysigned.backends.Backend`,
     which dispatches on each key's type. Everything else -- query
     canonicalisation, expiry, rotation -- is backend-agnostic.
 
     Args:
-        keys: A :class:`~pysigned.backends.KeySet`, or raw values that are
+        keys: A :class:`~pysigned.keys.KeySet`, or raw values that are
             wrapped in one. Raw bytes are read as HMAC keys; pass wrapped
             :class:`~pysigned.keys.Ed25519KeyPair` /
             :class:`~pysigned.keys.Ed25519PublicKey` for Ed25519.
@@ -64,6 +64,9 @@ class URLAuth:
     def sign(self, url: str) -> str:
         """Sign a URL, returning it with ``sig`` and ``exp`` query params added.
 
+        A ``kid`` param naming the signing key is also added when
+        ``require_kid`` is set.
+
         Args:
             url: The URL being signed as a string.
 
@@ -86,6 +89,14 @@ class URLAuth:
         Every configured key is checked, so signatures made with a rotated-out
         key still verify -- unless ``require_kid`` is set, in which case only the
         key named by the URL's ``kid`` is consulted (see :class:`URLAuth`).
+
+        Args:
+            url: The signed URL as a string.
+            skew: Grace period in seconds allowed past ``exp``, to tolerate
+                clock differences between signer and verifier.
+
+        Returns:
+            ``True`` if the signature is valid and unexpired, else ``False``.
         """
         parsed = urlparse(url)
         params = dict(parse_qsl(parsed.query))
